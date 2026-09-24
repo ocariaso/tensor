@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { cameraRulesFor, DIMENSIONS, type DimensionId } from './dimensions';
+import { cameraRulesFor, DIMENSIONS, isVisibleDimension, type DimensionId } from './dimensions';
 
 const ALL = Object.keys(DIMENSIONS) as DimensionId[];
 
@@ -26,6 +26,13 @@ describe('camera rules', () => {
     for (const id of ['3d', '4d', '5d', '6d', '7d', '8d', '9d'] as const) {
       expect(cameraRulesFor(id, 'inhabitant')).toEqual({ rotate: true, pan: 'free', zoom: true });
     }
+  });
+});
+
+describe('visible dimensions', () => {
+  it('offers 0D to 5D and hides the higher levels', () => {
+    for (const id of ['0d', '1d', '2d', '3d', '4d', '5d']) expect(isVisibleDimension(id)).toBe(true);
+    for (const id of ['6d', '7d', '8d', '9d', 'xd']) expect(isVisibleDimension(id)).toBe(false);
   });
 });
 

@@ -1,5 +1,5 @@
 import { Pane } from 'tweakpane';
-import type { DimensionId, ViewMode } from './dimensions';
+import { isVisibleDimension, MAX_VISIBLE_LEVEL, type DimensionId, type ViewMode } from './dimensions';
 
 export interface Settings {
   dimension: DimensionId;
@@ -17,8 +17,10 @@ export interface Settings {
   trailOpacity: number;
   branchCount: number;
   branchSpread: number;
-  /** Which future branch the moment feed follows. */
+  /** Which future branch the moment feed follows and the structure feed can focus on. */
   watchBranch: number;
+  /** How the structure feed draws the branches that are not in focus. */
+  otherBranches: 'show' | 'dim' | 'hide';
   universeCount: number;
   universeSpacing: number;
   treeCount: number;
@@ -51,18 +53,20 @@ export function createHud(settings: Settings, stats: Stats, callbacks: HudCallba
   world
     .addBinding(settings, 'dimension', {
       label: 'dimension',
-      options: {
-        '0D · Singularity': '0d',
-        '1D · Line': '1d',
-        '2D · Plane': '2d',
-        '3D · Sphere': '3d',
-        '4D · Spacetime': '4d',
-        '5D · Branches': '5d',
-        '6D · Parallel': '6d',
-        '7D · Forest of Seeds': '7d',
-        '8D · Orchard': '8d',
-        '9D · Laws of Physics': '9d',
-      },
+      options: Object.fromEntries(
+        Object.entries({
+          '0D · Singularity': '0d',
+          '1D · Line': '1d',
+          '2D · Plane': '2d',
+          '3D · Sphere': '3d',
+          '4D · Spacetime': '4d',
+          '5D · Branches': '5d',
+          '6D · Parallel': '6d',
+          '7D · Forest of Seeds': '7d',
+          '8D · Orchard': '8d',
+          '9D · Laws of Physics': '9d',
+        }).filter(([, id]) => isVisibleDimension(id)),
+      ),
     })
     .on('change', callbacks.onStateChange);
   world
@@ -112,6 +116,16 @@ export function createHud(settings: Settings, stats: Stats, callbacks: HudCallba
 
   const laws = pane.addFolder({ title: '9D · Laws of Physics' });
   laws.addBinding(settings, 'lawSpacing', { label: 'world spacing', min: 5, max: 12, step: 0.1 });
+
+  // Folders for hidden levels stay built but out of sight until those levels return.
+  for (const [folder, level] of [
+    [parallel, 6],
+    [forest, 7],
+    [orchard, 8],
+    [laws, 9],
+  ] as const) {
+    folder.hidden = level > MAX_VISIBLE_LEVEL;
+  }
 
   const look = pane.addFolder({ title: 'Appearance', expanded: false });
   look.addBinding(settings, 'coreSize', { label: '0D size (px)', min: 16, max: 160, step: 1 });

@@ -19,6 +19,13 @@ export interface DimensionSpec {
   inhabitantNote: string;
 }
 
+/** Highest level offered in the console; 6D to 9D stay built but hidden until they are revisited. */
+export const MAX_VISIBLE_LEVEL = 5;
+
+export function isVisibleDimension(id: string): id is DimensionId {
+  return id in DIMENSIONS && DIMENSIONS[id as DimensionId].level <= MAX_VISIBLE_LEVEL;
+}
+
 const FREE: CameraRules = { rotate: true, pan: 'free', zoom: true };
 
 export const DIMENSIONS: Record<DimensionId, DimensionSpec> = {

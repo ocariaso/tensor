@@ -18,7 +18,7 @@
         <span class="brand">TENSOR</span>
         <span class="subtitle">Observation Console</span>
         <span id="keys">
-          <kbd>0</kbd>–<kbd>9</kbd> dimension &nbsp; <kbd>V</kbd> view &nbsp; <kbd>I</kbd> info &nbsp; <kbd>Space</kbd> play / pause
+          <kbd>0</kbd>–<kbd>5</kbd> dimension &nbsp; <kbd>V</kbd> view &nbsp; <kbd>I</kbd> info &nbsp; <kbd>Space</kbd> play / pause
           &nbsp; <kbd>←</kbd><kbd>→</kbd> step
         </span>
       </header>
@@ -35,6 +35,12 @@
 
       <section id="feed-structure" class="feed" aria-label="Structure feed">
         <div class="feed-title">STRUCTURE FEED <span>the whole dimension at once</span></div>
+        <div id="focus-bar" class="picker top" role="group" aria-label="Branch focus">
+          <span class="picker-label">focus</span>
+          <div id="focus-buttons"></div>
+          <span class="picker-label">others</span>
+          <div id="others-buttons"></div>
+        </div>
         <aside id="info" aria-live="polite">
           <button id="info-toggle" type="button" aria-controls="info-details" aria-expanded="true" title="Minimize (I)">
             <span aria-hidden="true">−</span>

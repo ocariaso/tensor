@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { wrapAngle } from './angle';
 import { BRANCH_COLORS, BRANCH_MOTIONS, branchBlend, layoutBranches, MAX_BRANCHES } from './branches';
 import { CameraRig } from './cameraRig';
-import { cameraRulesFor, DIMENSIONS, SPECTATOR_NOTE, type DimensionId } from './dimensions';
+import { cameraRulesFor, DIMENSIONS, isVisibleDimension, SPECTATOR_NOTE, type DimensionId } from './dimensions';
 import { clampTreeCount, ORCHARD_COLUMNS, orchardSeed, TREES, type TreeSeed } from './forest';
 import { createSliceInstances, createUniverseInstances } from './geometry/timeSlices';
 import { createUvSphere } from './geometry/uvSphere';
@@ -252,7 +252,7 @@ const stats: Stats = { fps: 0, points: 0 };
 // Deep links: ?dim=1d&view=inhabitant
 const params = new URLSearchParams(window.location.search);
 const dimParam = params.get('dim');
-if (dimParam && dimParam in DIMENSIONS) settings.dimension = dimParam as DimensionId;
+if (dimParam && isVisibleDimension(dimParam)) settings.dimension = dimParam;
 const viewParam = params.get('view');
 if (viewParam === 'spectator' || viewParam === 'inhabitant') settings.view = viewParam;
 
@@ -506,7 +506,7 @@ window.addEventListener('keydown', (event) => {
     return;
   }
   const dimension = `${key}d`;
-  if (dimension in DIMENSIONS) settings.dimension = dimension as DimensionId;
+  if (isVisibleDimension(dimension)) settings.dimension = dimension;
   else if (key === 'v') settings.view = settings.view === 'spectator' ? 'inhabitant' : 'spectator';
   else return;
   pane.refresh();
