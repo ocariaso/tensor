@@ -9,6 +9,8 @@ export interface Settings {
   spinSpeed: number;
   /** Random motion is recorded as it happens; scripted motion follows the hand-written sway. */
   randomMotion: boolean;
+  /** Adds learnable habits to the random motion: circling, turning back at the edge, calm and restless moods. */
+  habits: boolean;
   /** Draws the learned prediction as the future while motion is random. */
   showPrediction: boolean;
   /** Shows the last graded prediction beside the real subject; grading runs either way. */
@@ -54,6 +56,10 @@ export interface Stats {
   /** Average distance between past predictions and where the subject really was. */
   errorHalf: number;
   errorOne: number;
+  /** Average one-second miss of the best possible guess, which knows the true rules and hidden habits. */
+  bestOne: number;
+  /** How close the model gets to that best possible guess, as a share. */
+  reachesBest: number;
   /** For each graded look-ahead: the confidence claimed, and how often it actually came true. */
   calibration: string;
   /** Whether the model started fresh or resumed what it learned before the page was reloaded. */
@@ -109,6 +115,7 @@ export function createHud(settings: Settings, stats: Stats, callbacks: HudCallba
   sphere.addBinding(settings, 'spin', { label: 'spin' });
   sphere.addBinding(settings, 'spinSpeed', { label: 'speed (rad/s)', min: 0, max: 3, step: 0.05 });
   sphere.addBinding(settings, 'randomMotion', { label: 'random motion' }).on('change', callbacks.onMotionChange);
+  sphere.addBinding(settings, 'habits', { label: 'habits' }).on('change', callbacks.onMotionChange);
 
   const time = pane.addFolder({ title: '4D · Time (T)' });
   time
@@ -130,6 +137,8 @@ export function createHud(settings: Settings, stats: Stats, callbacks: HudCallba
   learning.addBinding(stats, 'confidenceOne', { label: 'confident +1 s', readonly: true, format: asPercent });
   learning.addBinding(stats, 'errorHalf', { label: 'avg miss +0.5 s', readonly: true, format: asUnits });
   learning.addBinding(stats, 'errorOne', { label: 'avg miss +1 s', readonly: true, format: asUnits });
+  learning.addBinding(stats, 'bestOne', { label: 'best possible +1 s', readonly: true, format: asUnits });
+  learning.addBinding(stats, 'reachesBest', { label: 'reaches best', readonly: true, format: asPercent });
   learning.addBinding(stats, 'errorOne', { label: 'miss +1 s over time', readonly: true, view: 'graph', min: 0, max: 1.5 });
   learning.addBinding(stats, 'calibration', { label: 'claimed → true', readonly: true, multiline: true, rows: 5 });
   learning.addBinding(settings, 'showLastCheck', { label: 'show last check' });

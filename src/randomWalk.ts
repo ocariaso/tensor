@@ -33,19 +33,66 @@ export function gaussian(random: () => number): number {
   return Math.sqrt(-2 * Math.log(1 - random())) * Math.cos(2 * Math.PI * random());
 }
 
+export interface HabitTuning {
+  /** How often, per second, the subject switches between calm and restless. */
+  moodSwitchRate: number;
+  /** How hard it is pushed while calm and while restless, relative to the plain walk. */
+  calmPush: number;
+  restlessPush: number;
+  /** How often, per second, it starts circling while not circling, and stops while circling. */
+  circleStartRate: number;
+  circleStopRate: number;
+  /** Sideways acceleration that carries it around the centre while circling. */
+  circleForce: number;
+  /** Distance from the centre beyond which it reliably turns back, and how firmly. */
+  edge: number;
+  edgePull: number;
+}
+
+// Each habit lasts several seconds, long enough to be noticed and learned.
+export const DEFAULT_HABITS: HabitTuning = {
+  moodSwitchRate: 1 / 6,
+  calmPush: 0.5,
+  restlessPush: 1.5,
+  circleStartRate: 1 / 5,
+  circleStopRate: 1 / 4,
+  circleForce: 1.2,
+  edge: 0.9,
+  edgePull: 12,
+};
+
+export type Mood = 'calm' | 'restless';
+
 /**
  * A subject that drifts with momentum and random pushes, pulled gently back toward the centre.
+ * With habits on it also circles for stretches, turns back near the edge, and switches between calm and restless moods.
  * Its path is not known in advance, so its history is recorded as it happens.
  */
 export class RandomWalk {
   readonly position = new THREE.Vector3();
   readonly velocity = new THREE.Vector3();
+  habits = false;
+  mood: Mood = 'calm';
+  /** Which way it is circling, 1 or -1, or 0 when not circling. */
+  circling: -1 | 0 | 1 = 0;
   private carry = 0;
 
   constructor(
     private readonly random: () => number = Math.random,
     public tuning: WalkTuning = DEFAULT_WALK,
+    public habitTuning: HabitTuning = DEFAULT_HABITS,
   ) {}
+
+  /** An exact copy of the walk's full state, including its hidden habits, driven by its own randomness. */
+  clone(random: () => number): RandomWalk {
+    const copy = new RandomWalk(random, this.tuning, this.habitTuning);
+    copy.position.copy(this.position);
+    copy.velocity.copy(this.velocity);
+    copy.habits = this.habits;
+    copy.mood = this.mood;
+    copy.circling = this.circling;
+    return copy;
+  }
 
   /** Advances the walk by dt seconds, calling onStep after every fixed step with the time reached. */
   advance(dt: number, startTime: number, onStep: (time: number) => void): void {
@@ -62,8 +109,35 @@ export class RandomWalk {
   private step(dt: number): void {
     const { pull, damping, pushX, pushZ } = this.tuning;
     const kick = Math.sqrt(dt);
-    this.velocity.x += (-pull * this.position.x - damping * this.velocity.x) * dt + pushX * gaussian(this.random) * kick;
-    this.velocity.z += (-pull * this.position.z - damping * this.velocity.z) * dt + pushZ * gaussian(this.random) * kick;
+    const p = this.position;
+    let ax = -pull * p.x - damping * this.velocity.x;
+    let az = -pull * p.z - damping * this.velocity.z;
+    let pushScale = 1;
+
+    if (this.habits) {
+      const h = this.habitTuning;
+      if (this.random() < h.moodSwitchRate * dt) this.mood = this.mood === 'calm' ? 'restless' : 'calm';
+      if (this.circling === 0) {
+        if (this.random() < h.circleStartRate * dt) this.circling = this.random() < 0.5 ? 1 : -1;
+      } else if (this.random() < h.circleStopRate * dt) {
+        this.circling = 0;
+      }
+      pushScale = this.mood === 'calm' ? h.calmPush : h.restlessPush;
+
+      const r = Math.hypot(p.x, p.z);
+      if (this.circling !== 0 && r > 0.05) {
+        // (z, -x) is perpendicular to the direction from the centre, so it carries the subject around it.
+        ax += (p.z / r) * h.circleForce * this.circling;
+        az += (-p.x / r) * h.circleForce * this.circling;
+      }
+      if (r > h.edge) {
+        ax -= (p.x / r) * h.edgePull * (r - h.edge);
+        az -= (p.z / r) * h.edgePull * (r - h.edge);
+      }
+    }
+
+    this.velocity.x += ax * dt + pushX * pushScale * gaussian(this.random) * kick;
+    this.velocity.z += az * dt + pushZ * pushScale * gaussian(this.random) * kick;
     this.position.addScaledVector(this.velocity, dt);
   }
 }

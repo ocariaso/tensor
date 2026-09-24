@@ -29,7 +29,8 @@ import { MotionHistory, RandomWalk } from './randomWalk';
 import { createHistoryUniforms, syncHistoryUniforms } from './objects/historyUniforms';
 import { CONFIDENCE_RADIUS, forecast, MotionLearner, VELOCITY_WINDOW } from './ml/forecast';
 import { LinearMotionModel } from './ml/motionModel';
-import type { CheckResult } from './ml/predictionCheck';
+import { PredictionCheck, type CheckResult } from './ml/predictionCheck';
+import { bestPossibleGuess } from './ml/benchmark';
 import { HorizonCalibration } from './ml/horizonCalibration';
 import {
   exportFileName,
@@ -116,6 +117,11 @@ track.update(history, null);
 const learner = new MotionLearner(new LinearMotionModel(), HISTORY_INTERVAL);
 // Predictions are graded at several look-ahead times, each keeping its own confidence honest.
 const calibration = new HorizonCalibration();
+// The benchmark: the best possible one-second guess, graded the same way as the model's.
+const best = new PredictionCheck(CHECK_HORIZON, CONFIDENCE_RADIUS);
+// Simulating many futures is costly, so the best possible guess is taken every few recorded steps.
+const BEST_GUESS_EVERY = 6;
+let recordedSteps = 0;
 const check = calibration.check('one');
 let ghost: CheckResult | null = null;
 
@@ -344,6 +350,7 @@ const settings: Settings = {
   spin: true,
   spinSpeed: 0.35,
   randomMotion: true,
+  habits: true,
   showPrediction: true,
   showLastCheck: false,
   timeFlows: true,
@@ -380,6 +387,8 @@ const stats: Stats = {
   confidenceOne: 0,
   errorHalf: 0,
   errorOne: 0,
+  bestOne: 0,
+  reachesBest: 0,
   calibration: calibration.summary(),
   memory: 'fresh start',
 };
@@ -534,13 +543,22 @@ function resetModel(): void {
   stats.memory = 'fresh start';
   learner.reset();
   calibration.reset();
+  best.reset();
   ghost = null;
 }
 
-// Switching to random carries on from where the scripted sway is now, keeping the past already on screen.
+let motionWasRandom = settings.randomMotion;
+
+// Switching to random carries on from where the scripted sway is now, keeping the past already on screen;
+// switching habits on or off only changes how the walk moves from here on.
 function applyMotionMode(): void {
+  walk.habits = settings.habits;
+  const switchedToRandom = settings.randomMotion && !motionWasRandom;
+  motionWasRandom = settings.randomMotion;
   useRecordedMotion(null);
-  if (settings.randomMotion) {
+  if (settings.randomMotion && !switchedToRandom) {
+    useRecordedMotion(track);
+  } else if (settings.randomMotion) {
     history.fill(elapsed, scriptedOffset);
     scriptedOffset(elapsed, walk.position);
     treeVelocity(TREES[0], elapsed, walk.velocity);
@@ -563,6 +581,7 @@ const inspectorPos = document.querySelector<HTMLElement>('#insp-pos')!;
 const inspectorSpeed = document.querySelector<HTMLElement>('#insp-speed')!;
 const inspectorClock = document.querySelector<HTMLElement>('#insp-clock')!;
 const inspectorConfidence = document.querySelector<HTMLElement>('#insp-confidence')!;
+const inspectorHabit = document.querySelector<HTMLElement>('#insp-habit')!;
 const timelineFuture = document.querySelector<HTMLElement>('#tl-future')!;
 
 const rateButtons = PLAYBACK_RATES.map((rate) => {
@@ -1113,6 +1132,7 @@ let spin = 0;
 let last = performance.now();
 
 // A random subject starts at rest in the centre, so its recorded past begins as a straight, still tube.
+walk.habits = settings.habits;
 useRecordedMotion(settings.randomMotion ? track : null);
 syncHistoryUniforms(historyUniforms, track, settings.randomMotion);
 syncTimeline();
@@ -1147,6 +1167,13 @@ function updatePrediction(): void {
   stats.confidenceOne = steady('one', f.confidence[oneAhead]);
   stats.errorHalf = calibration.check('half').averageError;
   stats.errorOne = check.averageError;
+  best.settle(now, present.x, present.z);
+  stats.bestOne = best.averageError;
+  stats.reachesBest = best.checks > 0 && check.checks > 0 ? Math.min(1, best.averageError / Math.max(check.averageError, 1e-6)) : 0;
+
+  // Only the Spectator knows the subject's hidden state; the model has to infer it from the motion.
+  const habit = !walk.habits ? 'none (pure random)' : `${walk.mood}${walk.circling === 0 ? '' : ' · circling'}`;
+  if (inspectorHabit.textContent !== habit) inspectorHabit.textContent = habit;
   stats.calibration = calibration.summary();
 }
 
@@ -1160,6 +1187,11 @@ renderer.setAnimationLoop((now) => {
     walk.advance(worldDt, elapsed, (time) => {
       if (time < history.newestTime + HISTORY_INTERVAL - 1e-6) return;
       history.push(walk.position);
+      // The best possible guess needs the exact state at this moment, so it is taken as each step is recorded.
+      if (++recordedSteps % BEST_GUESS_EVERY === 0) {
+        const guess = bestPossibleGuess(walk, CHECK_HORIZON);
+        best.record(history.newestTime, guess.x, guess.z, 0);
+      }
       learner.observe(walk.position.x, walk.position.z);
     });
     updatePrediction();

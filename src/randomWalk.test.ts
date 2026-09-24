@@ -59,3 +59,64 @@ describe('MotionHistory', () => {
     expect(history.sample(-9, new THREE.Vector3()).x).toBeCloseTo(0);
   });
 });
+
+describe('RandomWalk habits', () => {
+  it('moves exactly as before while habits are off', () => {
+    const plain = new RandomWalk(mulberry32(4));
+    const off = new RandomWalk(mulberry32(4));
+    off.habits = false;
+    plain.advance(10, 0, () => {});
+    off.advance(10, 0, () => {});
+    expect(off.position.toArray()).toEqual(plain.position.toArray());
+  });
+
+  it('stays within reach of the centre, turning back near the edge', () => {
+    const walk = new RandomWalk(mulberry32(9));
+    walk.habits = true;
+    let furthest = 0;
+    walk.advance(600, 0, () => (furthest = Math.max(furthest, Math.hypot(walk.position.x, walk.position.z))));
+    expect(furthest).toBeLessThan(2);
+  });
+
+  it('travels around the centre while circling', () => {
+    const walk = new RandomWalk(mulberry32(12));
+    walk.habits = true;
+    walk.habitTuning = { ...walk.habitTuning, circleStopRate: 0, circleStartRate: 0 };
+    walk.circling = 1;
+    walk.position.set(0.6, 0, 0);
+    let turned = 0;
+    let last = Math.atan2(walk.position.z, walk.position.x);
+    walk.advance(8, 0, () => {
+      const angle = Math.atan2(walk.position.z, walk.position.x);
+      turned += Math.atan2(Math.sin(angle - last), Math.cos(angle - last));
+      last = angle;
+    });
+    // Circling one way winds up well over a full turn; the random pushes alone would not.
+    expect(Math.abs(turned)).toBeGreaterThan(2 * Math.PI);
+  });
+
+  it('moves more while restless than while calm', () => {
+    const speed = (mood: 'calm' | 'restless') => {
+      const walk = new RandomWalk(mulberry32(6));
+      walk.habits = true;
+      walk.habitTuning = { ...walk.habitTuning, moodSwitchRate: 0, circleStartRate: 0 };
+      walk.mood = mood;
+      let total = 0;
+      walk.advance(60, 0, () => (total += walk.velocity.length()));
+      return total;
+    };
+    expect(speed('restless')).toBeGreaterThan(speed('calm') * 1.5);
+  });
+
+  it('copies its full state, hidden habits included', () => {
+    const walk = new RandomWalk(mulberry32(2));
+    walk.habits = true;
+    walk.advance(5, 0, () => {});
+    const a = walk.clone(mulberry32(77));
+    const b = walk.clone(mulberry32(77));
+    expect([a.mood, a.circling]).toEqual([walk.mood, walk.circling]);
+    a.advance(2, 0, () => {});
+    b.advance(2, 0, () => {});
+    expect(a.position.toArray()).toEqual(b.position.toArray());
+  });
+});
