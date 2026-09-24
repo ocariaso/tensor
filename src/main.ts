@@ -70,14 +70,14 @@ const LON_SEGMENTS = 256;
 const SLICE_LAT = 32;
 const SLICE_LON = 64;
 const PAST_SLICES = 60;
-const FUTURE_SLICES = 24;
+const FUTURE_SLICES = 48;
 const SLICES_PER_UNIVERSE = 1 + PAST_SLICES + FUTURE_SLICES * MAX_BRANCHES;
 const SUBJECT_SCALE_4D = 0.45;
 // The recording covers a little more than the longest past the timeline offers.
 const HISTORY_INTERVAL = 1 / 60;
 const HISTORY_SAMPLES = 200;
 // The prediction reaches as far ahead as the longest future the timeline offers.
-const FUTURE_SAMPLES = 121;
+const FUTURE_SAMPLES = 301;
 // Predictions are scored this far ahead, which also tunes how much uncertainty the model admits to.
 const CHECK_HORIZON = 1;
 
@@ -303,13 +303,15 @@ const SPHERE_RADIUS = 1.2;
 const nowLabel = addLabel('NOW', 'now');
 const pastLabel = addLabel('PAST', 'time');
 const futureLabel = addLabel('FUTURE', 'time');
-const midConfidenceLabel = addLabel('', 'time');
 const ghostLabel = addLabel('', 'path');
 const timeAxisLabel = addLabel('time ↑', 'axis');
 const axisFutureLabel = addLabel('future', 'axis');
 const axisNowLabel = addLabel('now', 'axis');
 const axisPastLabel = addLabel('past', 'axis');
-const timeAxis = createGuideLines(2, 0x8a8fa8);
+// Tick marks along the time axis: whole seconds into the past, half seconds into the future.
+const RULER_TICKS = 10;
+const rulerLabels = Array.from({ length: RULER_TICKS }, () => addLabel('', 'axis'));
+const timeAxis = createGuideLines(2 + RULER_TICKS, 0x8a8fa8);
 const branchLabels = BRANCH_COLORS.map((color) => {
   const label = addLabel('', 'branch');
   label.setColor(color);
@@ -507,6 +509,8 @@ const pane = createHud(
   {
     onStateChange: applyState,
     onMotionChange: applyMotionMode,
+    // The scrub bar's range and the now mark follow the past and future lengths.
+    onTimeRangeChange: () => setPlayhead(settings.playhead),
     onResetModel: resetModel,
     onExportModel: exportModel,
     onImportModel: () => importInput.click(),
@@ -756,11 +760,10 @@ function placeLabels(
   // in a column beside the tube instead of chasing the moving subject.
   const forking = l > 4.5;
   nowLabel.setText(forking ? 'NOW · branches split here' : 'NOW');
-  nowLabel.update(at.set(forking ? -LABEL_COLUMN - 1 : LABEL_COLUMN, 0, 0), levelBand(l, 4, 6));
+  nowLabel.update(at.set(-LABEL_COLUMN - 1, 0, 0), forking ? levelBand(l, 4, 6) : 0);
   pastLabel.update(at.set(0, pastDt * ts - radius - 0.4, 0), levelBand(l, 4, 6) * visibility);
-  const tipConfidence = steady('tip', track.confidenceAt(track.presentTime + futureSpan()));
   futureLabel.setText(
-    settings.randomMotion ? `PREDICTED +${futureSpan().toFixed(1)} s · ${percent(tipConfidence)} confident` : 'FUTURE',
+    settings.randomMotion ? 'PREDICTED' : 'FUTURE',
   );
   futureLabel.update(at.set(0, futureDt * ts + radius + 0.4, 0), levelBand(l, 4, 4) * visibility * (futureSpan() > 0 ? 1 : 0));
   // Time stays the vertical direction at every level, so its axis moves out to the scene's edge as the scene widens.
@@ -774,22 +777,40 @@ function placeLabels(
   const axisZ = (-settings.treeSpacing * (treeCount - 1) * THREE.MathUtils.clamp(l - 6, 0, 1) * (1 - lawness)) / 2;
   const axisTop = futureDt * ts + radius + 0.2;
   const axisBottom = pastDt * ts;
-  setSegments(
-    timeAxis,
-    [
-      [new THREE.Vector3(axisX, axisBottom, axisZ), new THREE.Vector3(axisX, axisTop, axisZ)],
-      [new THREE.Vector3(axisX - 0.15, 0, axisZ), new THREE.Vector3(axisX + 0.15, 0, axisZ)],
-    ],
-    axisAlpha * 0.6,
-  );
+  // The axis works as a ruler: each tick names its moment, and future ticks carry the prediction's confidence.
+  const ticks: number[] = [];
+  for (let t = -1; t >= -settings.pastSeconds * temporal - 1e-6; t -= 1) ticks.push(t);
+  for (let t = 0.5; t <= futureSpan() * temporal + 1e-6; t += t < 1 ? 0.5 : 1) ticks.push(t);
+  const axisSegments: Array<[THREE.Vector3, THREE.Vector3]> = [
+    [new THREE.Vector3(axisX, axisBottom, axisZ), new THREE.Vector3(axisX, axisTop, axisZ)],
+    [new THREE.Vector3(axisX - 0.15, 0, axisZ), new THREE.Vector3(axisX + 0.15, 0, axisZ)],
+  ];
+  const showConfidence = settings.randomMotion && settings.showPrediction;
+  rulerLabels.forEach((label, i) => {
+    const t = ticks[i];
+    if (t === undefined || l > 6.5) {
+      label.update(at, 0);
+      return;
+    }
+    const y = t * ts;
+    axisSegments.push([new THREE.Vector3(axisX - 0.08, y, axisZ), new THREE.Vector3(axisX + 0.08, y, axisZ)]);
+    const time = t < 0 ? `−${Math.abs(t)} s` : `+${t.toFixed(1)} s`;
+    const text = t > 0 && showConfidence ? `${time} · ${percent(steady(`tick${t}`, track.confidenceAt(track.presentTime + t)))}` : time;
+    label.setText(text);
+    label.update(at.set(axisX + 0.35, y, axisZ), axisAlpha);
+    label.element.style.transform = 'translate(0, -50%)';
+  });
+  setSegments(timeAxis, axisSegments, axisAlpha * 0.6);
   // Branches and parallel universes share one history's clock, but separate seeds share no clock at all.
   timeAxisLabel.setText(l > 6.5 ? 'time ↑ · within each universe' : l > 4.5 ? 'time ↑ · shared by this history' : 'time ↑');
   timeAxisLabel.update(at.set(axisX, axisTop + 0.35, axisZ), axisAlpha);
   // Tick names sit just inside the axis so they stay on screen however wide the scene gets.
-  axisFutureLabel.update(at.set(axisX + 0.7, axisTop - 0.2, axisZ), futureSpan() > 0 ? axisAlpha : 0);
+  // The ruler's ticks already say which way is future, so only the far ends are named in words.
+  axisFutureLabel.update(at, 0);
   axisNowLabel.setText(l > 6.5 ? 'no shared now · each tree has its own' : 'now');
-  axisNowLabel.update(at.set(axisX + (l > 6.5 ? 2 : 0.6), 0.25, axisZ), axisAlpha);
-  axisPastLabel.update(at.set(axisX + 0.6, axisBottom + 0.2, axisZ), axisAlpha);
+  axisNowLabel.update(at.set(axisX + (l > 6.5 ? 2 : 0.35), 0, axisZ), axisAlpha);
+  axisNowLabel.element.style.transform = l > 6.5 ? '' : 'translate(0, -50%)';
+  axisPastLabel.update(at.set(axisX, axisBottom - 0.35, axisZ), axisAlpha);
 
   // 5D: each branch's name and probability at the tip of its future.
   const layout = layoutBranches(settings.branchCount);
@@ -1070,14 +1091,9 @@ function placePrediction(subjectScale: number, temporal: number, visibility: num
   momentGhost.visible = shown && Math.abs(settings.playhead) < 0.005 && temporal > 0.5;
   if (ghost) momentGhost.position.set(ghost.ghostX, 0, ghost.ghostZ);
   momentGhost.scale.setScalar(SPHERE_RADIUS);
-
-  const mid = Math.min(0.5, futureSpan() / 2);
-  at.set(LABEL_COLUMN, mid * temporal * settings.timeScale, 0);
-  midConfidenceLabel.setText(`+${mid.toFixed(1)} s · ${percent(steady('mid', track.confidenceAt(track.presentTime + mid)))}`);
-  midConfidenceLabel.update(at, predicting && mid > 0 ? alpha : 0);
 }
 
-// Labels beside the tube sit in a fixed column just outside where the subject wanders.
+// The 5D fork note sits in a fixed column just outside where the subject wanders.
 const LABEL_COLUMN = 2.4;
 const steadyValues = new Map<string, number>();
 
