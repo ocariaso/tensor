@@ -62,7 +62,7 @@ export const DIMENSIONS: Record<DimensionId, DimensionSpec> = {
     id: '4d',
     tag: 'Four Dimensions',
     title: '4D · Spacetime',
-    body: 'Time becomes a direction you can see, pointing up. Past moments stack below into a solid world-tube and future moments rise above as ghosts. The motion here is a formula, so the future already exists, like in a block universe.',
+    body: 'Time becomes a direction you can see, pointing up. Past moments stack below into a solid world-tube and future moments rise above as ghosts. The motion here is a formula, so the future already exists, like in a block universe. Here the future is exact because the motion is scripted; with a live subject it would be a true estimate.',
     level: 4,
     inhabitant: FREE,
     inhabitantNote: 'Inhabitant view: like us, you only experience the present moment, so the world-tube is hidden. Switch to Spectator to see all of time at once.',

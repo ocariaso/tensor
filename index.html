@@ -26,6 +26,11 @@
       <section id="feed-moment" class="feed" aria-label="Moment feed">
         <div class="feed-title">MOMENT FEED <span>one instant</span></div>
         <div id="moment-badge" class="badge">LIVE</div>
+        <div id="branch-picker" class="picker" role="group" aria-label="Branch to follow">
+          <span class="picker-label">following</span>
+          <div id="branch-buttons"></div>
+          <span id="branch-hint"></span>
+        </div>
       </section>
 
       <section id="feed-structure" class="feed" aria-label="Structure feed">
@@ -64,6 +69,7 @@
 
       <footer id="inspector" aria-label="Inspector">
         <span><b>moment</b> <span id="insp-time"></span></span>
+        <span id="insp-branch-wrap"><b>branch</b> <span id="insp-branch"></span></span>
         <span><b>position</b> <span id="insp-pos"></span></span>
         <span><b>speed</b> <span id="insp-speed"></span></span>
         <span><b>own clock</b> <span id="insp-clock"></span></span>

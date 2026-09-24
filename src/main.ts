@@ -230,6 +230,7 @@ const settings: Settings = {
   trailOpacity: 0.18,
   branchCount: 4,
   branchSpread: 1.2,
+  watchBranch: 0,
   universeCount: 3,
   universeSpacing: 1.9,
   treeCount: 3,
@@ -289,6 +290,7 @@ function applyState(): void {
   const spec = DIMENSIONS[settings.dimension];
   // Below 4D there is no time axis to scrub, so the structure feed takes the whole width.
   document.body.classList.toggle('single', spec.level < 4);
+  document.body.classList.toggle('branching', spec.level >= 5);
   level.duration = settings.transitionSeconds;
   level.retarget(spec.level);
   tubeVisibility.retarget(settings.view === 'spectator' ? 1 : 0);
@@ -320,6 +322,7 @@ function applyState(): void {
   trailUniforms.uBranchW.value = layout.offsets;
   trailUniforms.uBranchP.value = layout.probabilities;
   trailUniforms.uUniverseCount.value = universeCount;
+  syncBranchPicker();
 
   if (spec.id === '5d') {
     renderLegend(
@@ -409,6 +412,40 @@ function syncTimeline(): void {
   scrubInput.value = String(settings.playhead);
   nowMark.style.left = `${(settings.pastSeconds / (settings.pastSeconds + settings.futureSeconds)) * 100}%`;
   liveButton.classList.toggle('active', Math.abs(settings.playhead) < 0.005);
+}
+
+// Orbit controls capture the pointer on press, so controls laid over a feed must keep their presses to themselves.
+for (const overlay of document.querySelectorAll<HTMLElement>('#branch-picker, #info-toggle')) {
+  overlay.addEventListener('pointerdown', (event) => event.stopPropagation());
+}
+
+const branchHint = document.querySelector<HTMLElement>('#branch-hint')!;
+const inspectorBranch = document.querySelector<HTMLElement>('#insp-branch')!;
+const branchButtons = BRANCH_COLORS.map((color, b) => {
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.style.color = color;
+  button.addEventListener('click', () => {
+    settings.watchBranch = b;
+    syncBranchPicker();
+  });
+  document.querySelector('#branch-buttons')!.append(button);
+  return button;
+});
+
+function branchName(b: number): string {
+  return String.fromCharCode(65 + b);
+}
+
+// Shows one button per branch that exists, each with its probability, and marks the one being followed.
+function syncBranchPicker(): void {
+  const { probabilities } = layoutBranches(settings.branchCount);
+  if (settings.watchBranch >= settings.branchCount) settings.watchBranch = 0;
+  branchButtons.forEach((button, b) => {
+    button.hidden = b >= settings.branchCount;
+    button.textContent = `${branchName(b)} ${Math.round(probabilities[b] * 100)}%`;
+    button.setAttribute('aria-pressed', String(b === settings.watchBranch));
+  });
 }
 
 playButton.addEventListener('click', togglePlay);
@@ -687,6 +724,8 @@ function spriteWorld(camera: THREE.PerspectiveCamera, feedHeight: number): numbe
   return (settings.pointSize * 16 * Math.tan(THREE.MathUtils.degToRad(camera.fov / 2))) / Math.max(feedHeight, 1);
 }
 
+const branchShift = new THREE.Vector3();
+
 function drawFeed(rect: FeedRect, feedScene: THREE.Scene, camera: THREE.Camera, background: number): void {
   if (rect.width < 1 || rect.height < 1) return;
   renderer.setViewport(rect.x, rect.y, rect.width, rect.height);
@@ -696,10 +735,25 @@ function drawFeed(rect: FeedRect, feedScene: THREE.Scene, camera: THREE.Camera, 
 }
 
 // The ring sits on our world-tube at the watched instant, and the readouts describe that instant.
-function placePlayhead(momentTime: number, subjectScale: number, temporal: number, visibility: number, split: boolean): void {
+function placePlayhead(
+  momentTime: number,
+  subjectScale: number,
+  temporal: number,
+  visibility: number,
+  split: boolean,
+  branching: number,
+): void {
   const offset = settings.playhead * temporal;
-  subjectOffset(momentTime, playheadRing.position);
+  const inFuture = settings.playhead > 0.005;
+  subjectOffset(momentTime, playheadRing.position).add(branchShift);
   playheadRing.position.y = offset * settings.timeScale;
+  playheadRing.material.color.set(inFuture && branching > 0.5 ? BRANCH_COLORS[settings.watchBranch] : '#7dffa0');
+
+  const { probabilities } = layoutBranches(settings.branchCount);
+  const name = `${branchName(settings.watchBranch)} · ${Math.round(probabilities[settings.watchBranch] * 100)}%`;
+  inspectorBranch.textContent = inFuture ? name : `${name} (not split yet)`;
+  const hint = inFuture ? '' : 'branches split at now: move the playhead into the future to follow one';
+  if (branchHint.textContent !== hint) branchHint.textContent = hint;
   playheadRing.scale.setScalar(SPHERE_RADIUS * subjectScale * 1.25);
   playheadRing.material.opacity = split ? temporal * visibility : 0;
   playheadRing.visible = playheadRing.material.opacity > 0.01;
@@ -715,8 +769,13 @@ function placePlayhead(momentTime: number, subjectScale: number, temporal: numbe
   }
   if (scrubInput !== document.activeElement) scrubInput.value = String(settings.playhead);
 
-  const position = subjectOffset(momentTime, at);
-  const speed = treeVelocity(TREES[0], momentTime, velocity).length();
+  const position = subjectOffset(momentTime, at).add(branchShift);
+  // A branch's own drift adds to the sway, so its velocity is the slope of both together.
+  const layout = layoutBranches(settings.branchCount);
+  const b = settings.watchBranch;
+  const drift = (dt: number) => branchOffset(b, layout.offsets[b], settings.branchSpread, dt, branching, local);
+  const driftVelocity = drift(offset + 0.01).clone().sub(drift(Math.max(offset - 0.01, 0))).divideScalar(offset > 0.01 ? 0.02 : 0.01);
+  const speed = treeVelocity(TREES[0], momentTime, velocity).add(driftVelocity).length();
   inspectorTime.textContent = moment;
   inspectorPos.textContent = `x ${position.x.toFixed(2)} · z ${position.z.toFixed(2)}`;
   inspectorSpeed.textContent = `${speed.toFixed(2)} units/s`;
@@ -724,7 +783,12 @@ function placePlayhead(momentTime: number, subjectScale: number, temporal: numbe
 }
 
 // The moment feed shows our subject exactly as it is at the watched instant, at full size as in 3D.
-function updateMoment(dt: number, momentTime: number, spinAtMoment: number): void {
+function updateMoment(dt: number, momentTime: number, spinAtMoment: number, branching: number): void {
+  // Following a branch into the future shifts the subject along W and tints it in that branch's colour.
+  (momentUniforms.uTreeOffset.value as THREE.Vector3).copy(branchShift);
+  const followingBranch = settings.playhead > 0.005 ? branching : 0;
+  (momentUniforms.uTreeTint.value as THREE.Color).setStyle(BRANCH_COLORS[settings.watchBranch], THREE.LinearSRGBColorSpace);
+  momentUniforms.uTreeTintAmount.value = 0.35 * followingBranch;
   momentUniforms.uLevel.value = 3;
   momentUniforms.uSpin.value = spinAtMoment;
   momentUniforms.uTime.value = elapsed + settings.playhead;
@@ -737,8 +801,18 @@ function updateMoment(dt: number, momentTime: number, spinAtMoment: number): voi
   momentUniforms.uSpriteWorld.value = spriteWorld(momentCamera, momentRect.height);
   momentUniforms.uOpacity.value = settings.opacity;
   momentUniforms.uDensity.value = settings.density;
+
+  // The camera tracks the subject like a surveillance camera, while the fixed floor still shows it moving.
+  subjectOffset(momentTime, trackTarget).add(branchShift);
+  trackTarget.y = 0;
+  trackDelta.subVectors(trackTarget, momentControls.target).multiplyScalar(1 - Math.exp(-dt * 3));
+  momentControls.target.add(trackDelta);
+  momentCamera.position.add(trackDelta);
   momentControls.update(dt);
 }
+
+const trackTarget = new THREE.Vector3();
+const trackDelta = new THREE.Vector3();
 
 let elapsed = 0;
 let spin = 0;
@@ -864,8 +938,12 @@ renderer.setAnimationLoop((now) => {
   const split = !document.body.classList.contains('single');
   const momentTime = motionTime + settings.playhead * temporal;
   const spinAtMoment = spinning ? wrapAngle(spin + settings.playhead * temporal * settings.spinSpeed) : spin;
-  placePlayhead(momentTime, subjectScale, temporal, visibility, split);
-  if (split) updateMoment(dt, momentTime, spinAtMoment);
+  // Branches share the past and split at the present, so the chosen branch only moves the watched future.
+  const layout = layoutBranches(settings.branchCount);
+  const b = settings.watchBranch;
+  branchOffset(b, layout.offsets[b], settings.branchSpread, settings.playhead * temporal, branching, branchShift);
+  placePlayhead(momentTime, subjectScale, temporal, visibility, split, branching);
+  if (split) updateMoment(dt, momentTime, spinAtMoment, branching);
 
   rig.update(dt);
   drawFeed(structureRect, scene, rig.camera, 0x05060d);

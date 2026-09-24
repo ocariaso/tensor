@@ -17,6 +17,8 @@ export interface Settings {
   trailOpacity: number;
   branchCount: number;
   branchSpread: number;
+  /** Which future branch the moment feed follows. */
+  watchBranch: number;
   universeCount: number;
   universeSpacing: number;
   treeCount: number;
