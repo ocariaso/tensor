@@ -1,23 +1,26 @@
 import * as THREE from 'three';
 import { wrapAngle } from './angle';
-import { BRANCH_COLORS, layoutBranches } from './branches';
+import { BRANCH_COLORS, layoutBranches, MAX_BRANCHES } from './branches';
 import { CameraRig } from './cameraRig';
 import { cameraRulesFor, DIMENSIONS, SPECTATOR_NOTE, type DimensionId } from './dimensions';
+import { createSliceInstances, createUniverseInstances } from './geometry/timeSlices';
 import { createUvSphere } from './geometry/uvSphere';
 import { createHud, type Settings, type Stats } from './hud';
 import { createPointCloud } from './objects/pointCloud';
 import { createSingularity } from './objects/singularity';
-import { createTrail } from './objects/trail';
+import { createTrail, createTrailUniforms } from './objects/trail';
 import { Transition } from './transition';
+import { clampUniverseCount, MAX_UNIVERSES, UNIVERSE_TINTS, universeLabel } from './universes';
 
 // 128 x 256 uses half the point budget in a panorama-shaped grid.
 const LAT_SEGMENTS = 128;
 const LON_SEGMENTS = 256;
-// Each 4D slice is a coarse 2,048-point sphere so up to 180 slices stay cheap.
+// Each time slice is a coarse 2,048-point sphere so hundreds of slices stay affordable.
 const SLICE_LAT = 32;
 const SLICE_LON = 64;
 const PAST_SLICES = 60;
 const FUTURE_SLICES = 24;
+const SLICES_PER_UNIVERSE = 1 + PAST_SLICES + FUTURE_SLICES * MAX_BRANCHES;
 const SUBJECT_SCALE_4D = 0.45;
 
 const canvas = document.querySelector<HTMLCanvasElement>('#stage')!;
@@ -39,8 +42,10 @@ const sphereData = createUvSphere(LAT_SEGMENTS, LON_SEGMENTS);
 const cloud = createPointCloud(sphereData, LAT_SEGMENTS, LON_SEGMENTS, pixelRatio);
 const singularity = createSingularity(pixelRatio);
 const sliceData = createUvSphere(SLICE_LAT, SLICE_LON);
-const trail = createTrail(sliceData, PAST_SLICES, FUTURE_SLICES, pixelRatio);
-scene.add(cloud, singularity, trail);
+const trailUniforms = createTrailUniforms(pixelRatio);
+const trail = createTrail(sliceData, createSliceInstances(PAST_SLICES, FUTURE_SLICES, MAX_BRANCHES), trailUniforms);
+const parallel = createTrail(sliceData, createUniverseInstances(PAST_SLICES, FUTURE_SLICES, MAX_UNIVERSES, MAX_BRANCHES), trailUniforms);
+scene.add(cloud, singularity, trail, parallel);
 
 const settings: Settings = {
   dimension: '0d',
@@ -56,6 +61,8 @@ const settings: Settings = {
   trailOpacity: 0.18,
   branchCount: 4,
   branchSpread: 1.2,
+  universeCount: 3,
+  universeSpacing: 1.9,
   pointSize: 4,
   opacity: 0.9,
   density: 2,
@@ -76,6 +83,11 @@ if (viewParam === 'spectator' || viewParam === 'inhabitant') settings.view = vie
 const level = new Transition(DIMENSIONS[settings.dimension].level, settings.transitionSeconds);
 const tubeVisibility = new Transition(settings.view === 'spectator' ? 1 : 0, 0.6);
 
+interface LegendItem {
+  color: string;
+  label: string;
+}
+
 function applyState(): void {
   const spec = DIMENSIONS[settings.dimension];
   level.duration = settings.transitionSeconds;
@@ -89,26 +101,38 @@ function applyState(): void {
   infoView.textContent = settings.view === 'spectator' ? SPECTATOR_NOTE : spec.inhabitantNote;
 
   const layout = layoutBranches(settings.branchCount);
-  const trailUniforms = trail.material.uniforms;
+  const universeCount = clampUniverseCount(settings.universeCount);
   trailUniforms.uBranchCount.value = settings.branchCount;
   trailUniforms.uBranchW.value = layout.offsets;
   trailUniforms.uBranchP.value = layout.probabilities;
-  renderLegend(spec.id === '5d' ? layout.probabilities : []);
+  trailUniforms.uUniverseCount.value = universeCount;
+
+  if (spec.id === '5d') {
+    renderLegend(
+      layout.probabilities
+        .map((p, i) => ({ color: BRANCH_COLORS[i], label: `${String.fromCharCode(65 + i)} ${Math.round(p * 100)}%`, p }))
+        .filter(({ p }) => p > 0),
+    );
+  } else if (spec.id === '6d') {
+    renderLegend(
+      Array.from({ length: universeCount }, (_, i) => ({ color: UNIVERSE_TINTS[i], label: universeLabel(i) })),
+    );
+  } else {
+    renderLegend([]);
+  }
 }
 
-function renderLegend(probabilities: number[]): void {
-  const items = probabilities
-    .map((p, i) => ({ p, i }))
-    .filter(({ p }) => p > 0)
-    .map(({ p, i }) => {
+function renderLegend(items: LegendItem[]): void {
+  infoLegend.replaceChildren(
+    ...items.map(({ color, label }) => {
       const item = document.createElement('li');
       const swatch = document.createElement('span');
       swatch.className = 'swatch';
-      swatch.style.background = BRANCH_COLORS[i];
-      item.append(swatch, `${String.fromCharCode(65 + i)} ${Math.round(p * 100)}%`);
+      swatch.style.background = color;
+      item.append(swatch, label);
       return item;
-    });
-  infoLegend.replaceChildren(...items);
+    }),
+  );
 }
 
 const pane = createHud(settings, stats, { onStateChange: applyState });
@@ -148,6 +172,8 @@ renderer.setAnimationLoop((now) => {
 
   const l = level.update(dt);
   const temporal = THREE.MathUtils.clamp(l - 3, 0, 1);
+  const parallelness = THREE.MathUtils.clamp(l - 5, 0, 1);
+  const branching = THREE.MathUtils.clamp(l - 4, 0, 1);
   const subjectScale = THREE.MathUtils.lerp(1, SUBJECT_SCALE_4D, temporal);
   const spinning = settings.spin && l >= 3;
   // Spin only builds up on the finished sphere so leaving 3D unwinds at most half a turn.
@@ -178,12 +204,14 @@ renderer.setAnimationLoop((now) => {
   coreUniforms.uPresence.value = 1 - THREE.MathUtils.smoothstep(l, 0, 0.15);
   singularity.visible = coreUniforms.uPresence.value > 0.001;
 
-  const trailUniforms = trail.material.uniforms;
+  const visibility = tubeVisibility.update(dt);
   trailUniforms.uTemporal.value = temporal;
-  trailUniforms.uBranching.value = THREE.MathUtils.clamp(l - 4, 0, 1);
+  trailUniforms.uBranching.value = branching;
+  trailUniforms.uParallel.value = parallelness;
   trailUniforms.uBranchSpread.value = settings.branchSpread;
+  trailUniforms.uUniverseSpacing.value = settings.universeSpacing;
   trailUniforms.uSubjectScale.value = subjectScale;
-  trailUniforms.uVisibility.value = tubeVisibility.update(dt);
+  trailUniforms.uVisibility.value = visibility;
   trailUniforms.uMotionTime.value = motionTime;
   trailUniforms.uPast.value = settings.pastSeconds;
   trailUniforms.uFuture.value = settings.futureSeconds;
@@ -191,13 +219,20 @@ renderer.setAnimationLoop((now) => {
   trailUniforms.uSpin.value = spin;
   trailUniforms.uSpinRate.value = spinning && settings.timeFlows ? settings.spinSpeed : 0;
   trailUniforms.uOpacity.value = settings.trailOpacity;
-  trail.visible = trailUniforms.uTemporal.value * trailUniforms.uVisibility.value > 0.001;
 
-  const futureRuns = trailUniforms.uBranching.value > 0 ? settings.branchCount : 1;
+  // Only the slices that can show are sent to the GPU, since hidden instances still cost vertex work.
+  const futureRuns = branching > 0 ? settings.branchCount : 1;
+  const otherUniverses = parallelness > 0 ? clampUniverseCount(settings.universeCount) - 1 : 0;
+  trail.geometry.instanceCount = PAST_SLICES + FUTURE_SLICES * futureRuns;
+  parallel.geometry.instanceCount = SLICES_PER_UNIVERSE * otherUniverses;
+  trail.visible = temporal * visibility > 0.001;
+  parallel.visible = trail.visible && otherUniverses > 0;
+
   stats.points =
     (cloud.visible ? sphereData.count : 0) +
     (singularity.visible ? 1 : 0) +
-    (trail.visible ? sliceData.count * (PAST_SLICES + FUTURE_SLICES * futureRuns) : 0);
+    (trail.visible ? sliceData.count * trail.geometry.instanceCount : 0) +
+    (parallel.visible ? sliceData.count * parallel.geometry.instanceCount : 0);
 
   rig.update(dt);
   renderer.render(scene, rig.camera);

@@ -1,4 +1,4 @@
-export type DimensionId = '0d' | '1d' | '2d' | '3d' | '4d' | '5d';
+export type DimensionId = '0d' | '1d' | '2d' | '3d' | '4d' | '5d' | '6d';
 export type ViewMode = 'inhabitant' | 'spectator';
 export type PanAxes = 'none' | 'x' | 'xy' | 'free';
 
@@ -75,6 +75,15 @@ export const DIMENSIONS: Record<DimensionId, DimensionSpec> = {
     level: 5,
     inhabitant: FREE,
     inhabitantNote: 'Inhabitant view: you only ever live along one branch, and only in its present moment, so the others stay hidden.',
+  },
+  '6d': {
+    id: '6d',
+    tag: 'Six Dimensions · Speculative',
+    title: '6D · Parallel Universes',
+    body: 'Other universes split from ours at moments in the past and now run side by side along a new direction, U. The farther a universe sits along U, the longer ago it split. Each one keeps its own branching futures.',
+    level: 6,
+    inhabitant: FREE,
+    inhabitantNote: 'Inhabitant view: you are bound to your own universe and its present moment, so the others are invisible to you.',
   },
 };
 

@@ -15,6 +15,8 @@ export interface Settings {
   trailOpacity: number;
   branchCount: number;
   branchSpread: number;
+  universeCount: number;
+  universeSpacing: number;
   pointSize: number;
   opacity: number;
   density: number;
@@ -47,6 +49,7 @@ export function createHud(settings: Settings, stats: Stats, callbacks: HudCallba
         '3D · Sphere': '3d',
         '4D · Spacetime': '4d',
         '5D · Branches': '5d',
+        '6D · Parallel': '6d',
       },
     })
     .on('change', callbacks.onStateChange);
@@ -80,6 +83,12 @@ export function createHud(settings: Settings, stats: Stats, callbacks: HudCallba
     .addBinding(settings, 'branchCount', { label: 'branches', min: 3, max: 5, step: 1 })
     .on('change', callbacks.onStateChange);
   branches.addBinding(settings, 'branchSpread', { label: 'W spread', min: 0.2, max: 3, step: 0.05 });
+
+  const parallel = pane.addFolder({ title: '6D · Parallel (U)' });
+  parallel
+    .addBinding(settings, 'universeCount', { label: 'universes', min: 2, max: 5, step: 1 })
+    .on('change', callbacks.onStateChange);
+  parallel.addBinding(settings, 'universeSpacing', { label: 'U spacing', min: 1.5, max: 5, step: 0.05 });
 
   const look = pane.addFolder({ title: 'Appearance', expanded: false });
   look.addBinding(settings, 'coreSize', { label: '0D size (px)', min: 16, max: 160, step: 1 });
