@@ -1,4 +1,4 @@
-export type DimensionId = '0d' | '1d' | '2d' | '3d' | '4d' | '5d' | '6d' | '7d';
+export type DimensionId = '0d' | '1d' | '2d' | '3d' | '4d' | '5d' | '6d' | '7d' | '8d';
 export type ViewMode = 'inhabitant' | 'spectator';
 export type PanAxes = 'none' | 'x' | 'xy' | 'free';
 
@@ -93,6 +93,15 @@ export const DIMENSIONS: Record<DimensionId, DimensionSpec> = {
     level: 7,
     inhabitant: FREE,
     inhabitantNote: 'Inhabitant view: you live in one tree, in its present moment, so the rest of the forest is invisible to you.',
+  },
+  '8d': {
+    id: '8d',
+    tag: 'Eight Dimensions · Speculative',
+    title: '8D · An Orchard of Starting Points',
+    body: 'Starting conditions now vary in two ways at once. Rows keep each seed’s birth conditions and columns change the rhythm it was born with. Neighbouring trees are almost the same universe, so a path can step from any universe to any other across this plane. Side trees are drawn simplified; each still contains its full 6D world.',
+    level: 8,
+    inhabitant: FREE,
+    inhabitantNote: 'Inhabitant view: you live in one tree, in its present moment, so the orchard and its paths are invisible to you.',
   },
 };
 

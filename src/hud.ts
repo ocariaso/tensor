@@ -19,6 +19,8 @@ export interface Settings {
   universeSpacing: number;
   treeCount: number;
   treeSpacing: number;
+  orchardSpacing: number;
+  showPath: boolean;
   pointSize: number;
   opacity: number;
   density: number;
@@ -53,6 +55,7 @@ export function createHud(settings: Settings, stats: Stats, callbacks: HudCallba
         '5D · Branches': '5d',
         '6D · Parallel': '6d',
         '7D · Forest of Seeds': '7d',
+        '8D · Orchard': '8d',
       },
     })
     .on('change', callbacks.onStateChange);
@@ -98,6 +101,10 @@ export function createHud(settings: Settings, stats: Stats, callbacks: HudCallba
     .addBinding(settings, 'treeCount', { label: 'trees', min: 2, max: 4, step: 1 })
     .on('change', callbacks.onStateChange);
   forest.addBinding(settings, 'treeSpacing', { label: 'V spacing', min: 3, max: 10, step: 0.1 });
+
+  const orchard = pane.addFolder({ title: '8D · Orchard' });
+  orchard.addBinding(settings, 'orchardSpacing', { label: 'column spacing', min: 4, max: 14, step: 0.1 });
+  orchard.addBinding(settings, 'showPath', { label: 'path' });
 
   const look = pane.addFolder({ title: 'Appearance', expanded: false });
   look.addBinding(settings, 'coreSize', { label: '0D size (px)', min: 16, max: 160, step: 1 });

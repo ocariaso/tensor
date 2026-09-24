@@ -30,3 +30,26 @@ export const TREES: TreeSeed[] = [
 export function clampTreeCount(count: number): number {
   return Math.min(MAX_TREES, Math.max(MIN_TREES, Math.round(count)));
 }
+
+/** The 8D orchard's side columns, which keep each row's birth conditions but change the rhythm it was born with. */
+export const ORCHARD_COLUMNS = [
+  { side: -1, tempo: 0.6, label: 'slower rhythm' },
+  { side: 1, tempo: 1.6, label: 'faster rhythm' },
+] as const;
+
+export type OrchardColumn = (typeof ORCHARD_COLUMNS)[number];
+
+/** A neighbour of a row's tree in the 8D plane, so it grows from its own seed a little earlier or later. */
+export function orchardSeed(row: TreeSeed, column: OrchardColumn): TreeSeed {
+  const age = Number.isFinite(row.age) ? Math.max(0.6, row.age + column.side * 0.3) : column.side < 0 ? 2 : 1.3;
+  return {
+    label: `${row.label.split(' · ')[0]} · ${column.label}`,
+    tint: row.age === Infinity ? '#c9d4ff' : row.tint,
+    scale: row.scale,
+    phase: row.phase + column.side * 1.3,
+    tempo: row.tempo * column.tempo,
+    sway: row.sway,
+    spin: row.spin * column.tempo,
+    age,
+  };
+}

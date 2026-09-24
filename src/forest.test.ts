@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { clampTreeCount, MAX_TREES, TREES } from './forest';
+import { clampTreeCount, MAX_TREES, ORCHARD_COLUMNS, orchardSeed, TREES } from './forest';
 
 describe('forest seeds', () => {
   it('defines a seed for every tree slot', () => {
@@ -16,6 +16,24 @@ describe('forest seeds', () => {
     const others = TREES.slice(1);
     expect(new Set(others.map((t) => t.age)).size).toBe(others.length);
     for (const tree of others) expect(Number.isFinite(tree.age)).toBe(true);
+  });
+
+  it('gives every orchard neighbour its own visible seed, even beside ours', () => {
+    for (const row of TREES) {
+      for (const column of ORCHARD_COLUMNS) {
+        const seed = orchardSeed(row, column);
+        expect(Number.isFinite(seed.age)).toBe(true);
+        expect(seed.age).toBeGreaterThan(0);
+      }
+    }
+  });
+
+  it('keeps a row’s birth size but changes its rhythm across columns', () => {
+    const [slower, faster] = ORCHARD_COLUMNS.map((column) => orchardSeed(TREES[1], column));
+    expect(slower.scale).toBe(TREES[1].scale);
+    expect(faster.scale).toBe(TREES[1].scale);
+    expect(slower.tempo).toBeLessThan(TREES[1].tempo);
+    expect(faster.tempo).toBeGreaterThan(TREES[1].tempo);
   });
 
   it('clamps the count to the 2 to 4 range', () => {
