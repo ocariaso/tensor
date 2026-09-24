@@ -5,12 +5,12 @@ export interface Settings {
   dimension: DimensionId;
   view: ViewMode;
   transitionSeconds: number;
-  autoRotate: boolean;
   pointSize: number;
   opacity: number;
+  coreSize: number;
   omega: number;
   amplitude: number;
-  coreSize: number;
+  waveNumber: number;
 }
 
 export interface Stats {
@@ -23,13 +23,13 @@ export interface HudCallbacks {
 }
 
 export function createHud(settings: Settings, stats: Stats, callbacks: HudCallbacks): Pane {
-  const pane = new Pane({ title: 'Project N-D' });
+  const pane = new Pane({ title: 'OmniSpec' });
 
   const world = pane.addFolder({ title: 'World' });
   world
     .addBinding(settings, 'dimension', {
       label: 'dimension',
-      options: { 'Source shape (3D)': 'source', '0D · Singularity': '0d' },
+      options: { '0D · Singularity': '0d', '1D · Line': '1d' },
     })
     .on('change', callbacks.onStateChange);
   world
@@ -40,15 +40,15 @@ export function createHud(settings: Settings, stats: Stats, callbacks: HudCallba
     .on('change', callbacks.onStateChange);
   world.addBinding(settings, 'transitionSeconds', { label: 'transition (s)', min: 0.2, max: 5, step: 0.1 });
 
-  const shape = pane.addFolder({ title: 'Source shape' });
-  shape.addBinding(settings, 'autoRotate', { label: 'rotate' });
-  shape.addBinding(settings, 'pointSize', { label: 'point size', min: 1, max: 8, step: 0.1 });
-  shape.addBinding(settings, 'opacity', { label: 'brightness', min: 0.05, max: 1, step: 0.01 });
+  const harmonic = pane.addFolder({ title: 'Harmonic · sin(ωt − kx)' });
+  harmonic.addBinding(settings, 'omega', { label: 'ω (rad/s)', min: 0.2, max: 12, step: 0.1 });
+  harmonic.addBinding(settings, 'amplitude', { label: 'amplitude', min: 0, max: 0.9, step: 0.01 });
+  harmonic.addBinding(settings, 'waveNumber', { label: 'k (1D wave)', min: 0, max: 16, step: 0.1 });
 
-  const zero = pane.addFolder({ title: '0D · f(t) = sin(ωt)' });
-  zero.addBinding(settings, 'omega', { label: 'ω (rad/s)', min: 0.2, max: 12, step: 0.1 });
-  zero.addBinding(settings, 'amplitude', { label: 'amplitude', min: 0, max: 0.9, step: 0.01 });
-  zero.addBinding(settings, 'coreSize', { label: 'size (px)', min: 16, max: 160, step: 1 });
+  const look = pane.addFolder({ title: 'Appearance' });
+  look.addBinding(settings, 'coreSize', { label: '0D size (px)', min: 16, max: 160, step: 1 });
+  look.addBinding(settings, 'pointSize', { label: 'point size', min: 1, max: 8, step: 0.1 });
+  look.addBinding(settings, 'opacity', { label: 'brightness', min: 0.05, max: 1, step: 0.01 });
 
   const perf = pane.addFolder({ title: 'Performance', expanded: false });
   perf.addBinding(stats, 'fps', { readonly: true, view: 'graph', min: 0, max: 150 });

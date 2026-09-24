@@ -26,36 +26,36 @@ const scene = new THREE.Scene();
 const rig = new CameraRig(canvas);
 
 const sphereData = createUvSphere(LAT_SEGMENTS, LON_SEGMENTS);
-const cloud = createPointCloud(sphereData, pixelRatio);
+const cloud = createPointCloud(sphereData, LON_SEGMENTS, pixelRatio);
 const singularity = createSingularity(pixelRatio);
 scene.add(cloud, singularity);
 
 const settings: Settings = {
-  dimension: 'source',
+  dimension: '0d',
   view: 'spectator',
   transitionSeconds: 1.6,
-  autoRotate: true,
-  pointSize: 3,
-  opacity: 0.35,
-  omega: 2,
-  amplitude: 0.35,
+  pointSize: 4,
+  opacity: 0.9,
   coreSize: 64,
+  omega: 2,
+  amplitude: 0.6,
+  waveNumber: 4,
 };
-const stats: Stats = { fps: 0, points: sphereData.count };
+const stats: Stats = { fps: 0, points: 0 };
 
-// Deep links: ?dim=0d&view=inhabitant
+// Deep links: ?dim=1d&view=inhabitant
 const params = new URLSearchParams(window.location.search);
 const dimParam = params.get('dim');
 if (dimParam && dimParam in DIMENSIONS) settings.dimension = dimParam as DimensionId;
 const viewParam = params.get('view');
 if (viewParam === 'spectator' || viewParam === 'inhabitant') settings.view = viewParam;
 
-const collapse = new Transition(DIMENSIONS[settings.dimension].collapse, settings.transitionSeconds);
+const level = new Transition(DIMENSIONS[settings.dimension].level, settings.transitionSeconds);
 
 function applyState(): void {
   const spec = DIMENSIONS[settings.dimension];
-  collapse.duration = settings.transitionSeconds;
-  collapse.retarget(spec.collapse);
+  level.duration = settings.transitionSeconds;
+  level.retarget(spec.level);
   rig.apply(cameraRulesFor(settings.dimension, settings.view));
 
   infoTag.textContent = spec.tag;
@@ -69,8 +69,8 @@ const pane = createHud(settings, stats, { onStateChange: applyState });
 window.addEventListener('keydown', (event) => {
   if (event.target instanceof HTMLInputElement) return;
   const key = event.key.toLowerCase();
-  if (key === 's') settings.dimension = 'source';
-  else if (key === '0') settings.dimension = '0d';
+  const dimension = `${key}d`;
+  if (dimension in DIMENSIONS) settings.dimension = dimension as DimensionId;
   else if (key === 'v') settings.view = settings.view === 'spectator' ? 'inhabitant' : 'spectator';
   else return;
   pane.refresh();
@@ -96,22 +96,25 @@ renderer.setAnimationLoop((now) => {
   elapsed += dt;
   stats.fps += (1 / Math.max(dt, 1e-4) - stats.fps) * 0.05;
 
-  const c = collapse.update(dt);
+  const l = level.update(dt);
 
-  if (settings.autoRotate) cloud.rotation.y += dt * 0.25;
   const cloudUniforms = cloud.material.uniforms;
-  cloudUniforms.uCollapse.value = c;
+  cloudUniforms.uLevel.value = l;
+  cloudUniforms.uTime.value = elapsed;
+  cloudUniforms.uOmega.value = settings.omega;
+  cloudUniforms.uAmplitude.value = settings.amplitude;
+  cloudUniforms.uWaveNumber.value = settings.waveNumber;
   cloudUniforms.uPointSize.value = settings.pointSize;
   cloudUniforms.uOpacity.value = settings.opacity;
-  // The singularity replaces the cloud once the collapse finishes.
-  cloud.visible = c > 0.001;
+  // The singularity stands in for the cloud while everything sits on the origin.
+  cloud.visible = l > 0.001;
 
   const coreUniforms = singularity.material.uniforms;
   coreUniforms.uTime.value = elapsed;
   coreUniforms.uOmega.value = settings.omega;
   coreUniforms.uAmplitude.value = settings.amplitude;
   coreUniforms.uBaseSize.value = settings.coreSize;
-  coreUniforms.uPresence.value = 1 - THREE.MathUtils.smoothstep(c, 0, 0.15);
+  coreUniforms.uPresence.value = 1 - THREE.MathUtils.smoothstep(l, 0, 0.15);
   singularity.visible = coreUniforms.uPresence.value > 0.001;
 
   stats.points = (cloud.visible ? sphereData.count : 0) + (singularity.visible ? 1 : 0);

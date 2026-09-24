@@ -5,7 +5,7 @@ import fragmentShader from '../shaders/cloud.frag.glsl?raw';
 
 export type PointCloud = THREE.Points<THREE.BufferGeometry, THREE.ShaderMaterial>;
 
-export function createPointCloud(data: PointCloudData, pixelRatio: number): PointCloud {
+export function createPointCloud(data: PointCloudData, lonSegments: number, pixelRatio: number): PointCloud {
   const geometry = new THREE.BufferGeometry();
   geometry.setAttribute('position', new THREE.BufferAttribute(data.positions, 3));
   geometry.setAttribute('uv', new THREE.BufferAttribute(data.uvs, 2));
@@ -14,10 +14,16 @@ export function createPointCloud(data: PointCloudData, pixelRatio: number): Poin
     vertexShader,
     fragmentShader,
     uniforms: {
-      uCollapse: { value: 1 },
+      uLevel: { value: 0 },
+      uExtent: { value: 1.7 },
+      uLonSegments: { value: lonSegments },
       uPointSize: { value: 3 },
       uOpacity: { value: 0.35 },
       uPixelRatio: { value: pixelRatio },
+      uTime: { value: 0 },
+      uOmega: { value: 2 },
+      uAmplitude: { value: 0.35 },
+      uWaveNumber: { value: 4 },
     },
     transparent: true,
     depthWrite: false,
