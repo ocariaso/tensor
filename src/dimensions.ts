@@ -1,4 +1,4 @@
-export type DimensionId = '0d' | '1d' | '2d' | '3d' | '4d' | '5d' | '6d';
+export type DimensionId = '0d' | '1d' | '2d' | '3d' | '4d' | '5d' | '6d' | '7d';
 export type ViewMode = 'inhabitant' | 'spectator';
 export type PanAxes = 'none' | 'x' | 'xy' | 'free';
 
@@ -84,6 +84,15 @@ export const DIMENSIONS: Record<DimensionId, DimensionSpec> = {
     level: 6,
     inhabitant: FREE,
     inhabitantNote: 'Inhabitant view: you are bound to your own universe and its present moment, so the others are invisible to you.',
+  },
+  '7d': {
+    id: '7d',
+    tag: 'Seven Dimensions · Speculative',
+    title: '7D · Different Laws of Physics',
+    body: 'Universes where the constants of nature differ. Lower c and moving things shorten along their motion, raise h and positions blur into uncertainty, and raise G and space pinches toward a central mass. In our universe all three effects are far too small to see.',
+    level: 7,
+    inhabitant: FREE,
+    inhabitantNote: 'Inhabitant view: you live under one fixed set of laws and only experience your own present moment.',
   },
 };
 

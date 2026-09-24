@@ -5,7 +5,9 @@ import { CameraRig } from './cameraRig';
 import { cameraRulesFor, DIMENSIONS, SPECTATOR_NOTE, type DimensionId } from './dimensions';
 import { createSliceInstances, createUniverseInstances } from './geometry/timeSlices';
 import { createUvSphere } from './geometry/uvSphere';
+import { effectiveConstants } from './physics';
 import { createHud, type Settings, type Stats } from './hud';
+import { createCentralMass } from './objects/centralMass';
 import { createPointCloud } from './objects/pointCloud';
 import { createSingularity } from './objects/singularity';
 import { createTrail, createTrailUniforms } from './objects/trail';
@@ -45,7 +47,8 @@ const sliceData = createUvSphere(SLICE_LAT, SLICE_LON);
 const trailUniforms = createTrailUniforms(pixelRatio);
 const trail = createTrail(sliceData, createSliceInstances(PAST_SLICES, FUTURE_SLICES, MAX_BRANCHES), trailUniforms);
 const parallel = createTrail(sliceData, createUniverseInstances(PAST_SLICES, FUTURE_SLICES, MAX_UNIVERSES, MAX_BRANCHES), trailUniforms);
-scene.add(cloud, singularity, trail, parallel);
+const centralMass = createCentralMass();
+scene.add(cloud, singularity, trail, parallel, centralMass);
 
 const settings: Settings = {
   dimension: '0d',
@@ -63,6 +66,10 @@ const settings: Settings = {
   branchSpread: 1.2,
   universeCount: 3,
   universeSpacing: 1.9,
+  // 7D opens on a visibly different universe; the reset button returns every dial to ours.
+  lightSpeedExp: -3,
+  uncertaintyExp: 2.3,
+  gravityExp: 3.5,
   pointSize: 4,
   opacity: 0.9,
   density: 2,
@@ -113,7 +120,7 @@ function applyState(): void {
         .map((p, i) => ({ color: BRANCH_COLORS[i], label: `${String.fromCharCode(65 + i)} ${Math.round(p * 100)}%`, p }))
         .filter(({ p }) => p > 0),
     );
-  } else if (spec.id === '6d') {
+  } else if (spec.level >= 6) {
     renderLegend(
       Array.from({ length: universeCount }, (_, i) => ({ color: UNIVERSE_TINTS[i], label: universeLabel(i) })),
     );
@@ -135,7 +142,15 @@ function renderLegend(items: LegendItem[]): void {
   );
 }
 
-const pane = createHud(settings, stats, { onStateChange: applyState });
+const pane = createHud(settings, stats, {
+  onStateChange: applyState,
+  onResetConstants: () => {
+    settings.lightSpeedExp = 0;
+    settings.uncertaintyExp = 0;
+    settings.gravityExp = 0;
+    pane.refresh();
+  },
+});
 
 window.addEventListener('keydown', (event) => {
   if (event.target instanceof HTMLInputElement) return;
@@ -174,6 +189,8 @@ renderer.setAnimationLoop((now) => {
   const temporal = THREE.MathUtils.clamp(l - 3, 0, 1);
   const parallelness = THREE.MathUtils.clamp(l - 5, 0, 1);
   const branching = THREE.MathUtils.clamp(l - 4, 0, 1);
+  const lawShift = THREE.MathUtils.clamp(l - 6, 0, 1);
+  const physics = effectiveConstants(settings, lawShift);
   const subjectScale = THREE.MathUtils.lerp(1, SUBJECT_SCALE_4D, temporal);
   const spinning = settings.spin && l >= 3;
   // Spin only builds up on the finished sphere so leaving 3D unwinds at most half a turn.
@@ -184,6 +201,9 @@ renderer.setAnimationLoop((now) => {
   cloudUniforms.uSpin.value = spin;
   cloudUniforms.uTime.value = elapsed;
   cloudUniforms.uMotionTime.value = motionTime;
+  cloudUniforms.uLightSpeed.value = physics.lightSpeed;
+  cloudUniforms.uUncertainty.value = physics.uncertainty;
+  cloudUniforms.uGravity.value = physics.gravity;
   cloudUniforms.uSubjectScale.value = subjectScale;
   cloudUniforms.uOmega.value = settings.omega;
   cloudUniforms.uAmplitude.value = settings.amplitude;
@@ -205,6 +225,9 @@ renderer.setAnimationLoop((now) => {
   singularity.visible = coreUniforms.uPresence.value > 0.001;
 
   const visibility = tubeVisibility.update(dt);
+  // The mass's world-line shows only while its pull is dialed above ours, and only to the Spectator.
+  centralMass.material.opacity = 0.6 * lawShift * visibility * THREE.MathUtils.clamp(settings.gravityExp / 2, 0, 1);
+  centralMass.visible = centralMass.material.opacity > 0.001;
   trailUniforms.uTemporal.value = temporal;
   trailUniforms.uBranching.value = branching;
   trailUniforms.uParallel.value = parallelness;
@@ -212,7 +235,11 @@ renderer.setAnimationLoop((now) => {
   trailUniforms.uUniverseSpacing.value = settings.universeSpacing;
   trailUniforms.uSubjectScale.value = subjectScale;
   trailUniforms.uVisibility.value = visibility;
+  trailUniforms.uTime.value = elapsed;
   trailUniforms.uMotionTime.value = motionTime;
+  trailUniforms.uLightSpeed.value = physics.lightSpeed;
+  trailUniforms.uUncertainty.value = physics.uncertainty;
+  trailUniforms.uGravity.value = physics.gravity;
   trailUniforms.uPast.value = settings.pastSeconds;
   trailUniforms.uFuture.value = settings.futureSeconds;
   trailUniforms.uTimeScale.value = settings.timeScale;

@@ -6,6 +6,7 @@ uniform float uTemporal;     // 0 = no time axis, 1 = full 4D extrusion
 uniform float uBranching;    // 0 = one future, 1 = fully split into branches
 uniform float uParallel;     // 0 = only ours, 1 = parallel universes fully slid out
 uniform float uVisibility;   // 0 = present only, 1 = whole world-tube
+uniform float uTime;
 uniform float uMotionTime;
 uniform float uPast;         // seconds
 uniform float uFuture;       // seconds
@@ -49,9 +50,11 @@ void main() {
   // A parallel universe shares our history until its split, then peels away onto its own path.
   float splitAgo = uUniverseSplit[u] * uPast;
   float apart = u == 0 ? 1.0 : smoothstep(0.0, splitAgo, dt + splitAgo);
+  float theirTime = uMotionTime + dt + uUniversePhase[u];
   vec3 ours = subjectOffset(uMotionTime + dt);
-  vec3 theirs = subjectOffset(uMotionTime + dt + uUniversePhase[u]) * uUniverseAmp[u];
-  p += mix(ours, theirs, apart);
+  vec3 theirs = subjectOffset(theirTime) * uUniverseAmp[u];
+  vec3 velocity = mix(subjectVelocity(uMotionTime + dt), subjectVelocity(theirTime) * uUniverseAmp[u], apart);
+  p = contract(p, velocity) + mix(ours, theirs, apart);
 
   // Branches start together at the present and drift apart along W, drawn as the X direction.
   if (!isPast && b > 0) {
@@ -63,6 +66,7 @@ void main() {
 
   // Parallel universes slide out from ours along U, also drawn along X.
   p.x += uUniverseShift[u] * uUniverseSpacing * uParallel * apart;
+  p = gravitate(uncertain(p, uv + vec2(aSlice * 3.1 + aBranch * 0.9, aUniverse * 1.7), uTime));
   p.y += dt * uTimeScale;
 
   vec4 mvPosition = modelViewMatrix * vec4(p, 1.0);

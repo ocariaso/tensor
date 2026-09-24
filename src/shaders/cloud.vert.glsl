@@ -47,7 +47,9 @@ void main() {
   mat3 turn = spinY(uSpin * wrap);
   p = turn * tipUp * p;
   n = turn * tipUp * n;
+  p = contract(p, subjectVelocity(uMotionTime) * wrap);
   p += subjectOffset(uMotionTime) * wrap;
+  p = gravitate(uncertain(p, uv, uTime));
 
   vec4 mvPosition = modelViewMatrix * vec4(p, 1.0);
   gl_Position = projectionMatrix * mvPosition;

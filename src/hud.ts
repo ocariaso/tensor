@@ -1,7 +1,8 @@
 import { Pane } from 'tweakpane';
 import type { DimensionId, ViewMode } from './dimensions';
+import { GRAVITY_RANGE, LIGHT_SPEED_RANGE, UNCERTAINTY_RANGE, type ConstantDials } from './physics';
 
-export interface Settings {
+export interface Settings extends ConstantDials {
   dimension: DimensionId;
   view: ViewMode;
   transitionSeconds: number;
@@ -33,7 +34,10 @@ export interface Stats {
 
 export interface HudCallbacks {
   onStateChange: () => void;
+  onResetConstants: () => void;
 }
+
+const signed = (v: number) => `${v > 0 ? '+' : ''}${v.toFixed(1)}`;
 
 export function createHud(settings: Settings, stats: Stats, callbacks: HudCallbacks): Pane {
   const pane = new Pane({ title: 'TENSOR' });
@@ -50,6 +54,7 @@ export function createHud(settings: Settings, stats: Stats, callbacks: HudCallba
         '4D · Spacetime': '4d',
         '5D · Branches': '5d',
         '6D · Parallel': '6d',
+        '7D · Laws of Physics': '7d',
       },
     })
     .on('change', callbacks.onStateChange);
@@ -89,6 +94,17 @@ export function createHud(settings: Settings, stats: Stats, callbacks: HudCallba
     .addBinding(settings, 'universeCount', { label: 'universes', min: 2, max: 5, step: 1 })
     .on('change', callbacks.onStateChange);
   parallel.addBinding(settings, 'universeSpacing', { label: 'U spacing', min: 1.5, max: 5, step: 0.05 });
+
+  const constants = pane.addFolder({ title: '7D · Constants (V), ours ×10^n' });
+  constants.addBinding(settings, 'lightSpeedExp', { label: 'c (light)', ...LIGHT_SPEED_RANGE, step: 0.1, format: signed });
+  constants.addBinding(settings, 'uncertaintyExp', {
+    label: 'h (Planck)',
+    ...UNCERTAINTY_RANGE,
+    step: 0.1,
+    format: signed,
+  });
+  constants.addBinding(settings, 'gravityExp', { label: 'G (gravity)', ...GRAVITY_RANGE, step: 0.1, format: signed });
+  constants.addButton({ title: 'Reset to our universe' }).on('click', callbacks.onResetConstants);
 
   const look = pane.addFolder({ title: 'Appearance', expanded: false });
   look.addBinding(settings, 'coreSize', { label: '0D size (px)', min: 16, max: 160, step: 1 });

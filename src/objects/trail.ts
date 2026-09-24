@@ -2,6 +2,8 @@ import * as THREE from 'three';
 import { BRANCH_COLORS, layoutBranches, MAX_BRANCHES } from '../branches';
 import type { SliceInstances } from '../geometry/timeSlices';
 import type { PointCloudData } from '../geometry/uvSphere';
+import { GRAVITY_OURS, LIGHT_SPEED_OURS, UNCERTAINTY_OURS } from '../physics';
+import physicsChunk from '../shaders/physics.glsl?raw';
 import subjectChunk from '../shaders/subject.glsl?raw';
 import trailVertex from '../shaders/trail.vert.glsl?raw';
 import fragmentShader from '../shaders/cloud.frag.glsl?raw';
@@ -30,7 +32,11 @@ export function createTrailUniforms(pixelRatio: number): TrailUniforms {
     uBranching: { value: 0 },
     uParallel: { value: 0 },
     uVisibility: { value: 1 },
+    uTime: { value: 0 },
     uMotionTime: { value: 0 },
+    uLightSpeed: { value: LIGHT_SPEED_OURS },
+    uUncertainty: { value: UNCERTAINTY_OURS },
+    uGravity: { value: GRAVITY_OURS },
     uPast: { value: 2 },
     uFuture: { value: 1 },
     uTimeScale: { value: 0.8 },
@@ -67,7 +73,7 @@ export function createTrail(slice: PointCloudData, instances: SliceInstances, un
   geometry.instanceCount = instances.slices.length;
 
   const material = new THREE.ShaderMaterial({
-    vertexShader: `${subjectChunk}\n${trailVertex}`,
+    vertexShader: `${subjectChunk}\n${physicsChunk}\n${trailVertex}`,
     fragmentShader,
     uniforms,
     transparent: true,

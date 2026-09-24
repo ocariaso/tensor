@@ -23,7 +23,7 @@ describe('camera rules', () => {
   });
 
   it('gives 3D and higher Inhabitants full orbit', () => {
-    for (const id of ['3d', '4d', '5d', '6d'] as const) {
+    for (const id of ['3d', '4d', '5d', '6d', '7d'] as const) {
       expect(cameraRulesFor(id, 'inhabitant')).toEqual({ rotate: true, pan: 'free', zoom: true });
     }
   });
