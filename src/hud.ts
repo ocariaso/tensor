@@ -13,6 +13,8 @@ export interface Settings {
   futureSeconds: number;
   timeScale: number;
   trailOpacity: number;
+  branchCount: number;
+  branchSpread: number;
   pointSize: number;
   opacity: number;
   density: number;
@@ -44,6 +46,7 @@ export function createHud(settings: Settings, stats: Stats, callbacks: HudCallba
         '2D · Plane': '2d',
         '3D · Sphere': '3d',
         '4D · Spacetime': '4d',
+        '5D · Branches': '5d',
       },
     })
     .on('change', callbacks.onStateChange);
@@ -71,6 +74,12 @@ export function createHud(settings: Settings, stats: Stats, callbacks: HudCallba
   time.addBinding(settings, 'futureSeconds', { label: 'future (s)', min: 0, max: 2, step: 0.1 });
   time.addBinding(settings, 'timeScale', { label: 'units / s', min: 0.2, max: 2, step: 0.05 });
   time.addBinding(settings, 'trailOpacity', { label: 'tube opacity', min: 0.02, max: 0.6, step: 0.01 });
+
+  const branches = pane.addFolder({ title: '5D · Branches (W)' });
+  branches
+    .addBinding(settings, 'branchCount', { label: 'branches', min: 3, max: 5, step: 1 })
+    .on('change', callbacks.onStateChange);
+  branches.addBinding(settings, 'branchSpread', { label: 'W spread', min: 0.2, max: 3, step: 0.05 });
 
   const look = pane.addFolder({ title: 'Appearance', expanded: false });
   look.addBinding(settings, 'coreSize', { label: '0D size (px)', min: 16, max: 160, step: 1 });

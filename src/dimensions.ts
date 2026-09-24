@@ -1,4 +1,4 @@
-export type DimensionId = '0d' | '1d' | '2d' | '3d' | '4d';
+export type DimensionId = '0d' | '1d' | '2d' | '3d' | '4d' | '5d';
 export type ViewMode = 'inhabitant' | 'spectator';
 export type PanAxes = 'none' | 'x' | 'xy' | 'free';
 
@@ -66,6 +66,15 @@ export const DIMENSIONS: Record<DimensionId, DimensionSpec> = {
     level: 4,
     inhabitant: FREE,
     inhabitantNote: 'Inhabitant view: like us, you only experience the present moment, so the world-tube is hidden. Switch to Spectator to see all of time at once.',
+  },
+  '5d': {
+    id: '5d',
+    tag: 'Five Dimensions · Speculative',
+    title: '5D · Probability Branches',
+    body: 'At the present moment the future splits along a new direction, W, into several possible branches that drift apart. Brighter branches are likelier. This follows the many-worlds interpretation, and the weights are illustrative rather than measured.',
+    level: 5,
+    inhabitant: FREE,
+    inhabitantNote: 'Inhabitant view: you only ever live along one branch, and only in its present moment, so the others stay hidden.',
   },
 };
 

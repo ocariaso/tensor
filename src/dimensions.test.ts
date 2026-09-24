@@ -22,9 +22,10 @@ describe('camera rules', () => {
     expect(cameraRulesFor('2d', 'inhabitant')).toEqual({ rotate: false, pan: 'xy', zoom: true });
   });
 
-  it('gives 3D and 4D Inhabitants full orbit', () => {
-    expect(cameraRulesFor('3d', 'inhabitant')).toEqual({ rotate: true, pan: 'free', zoom: true });
-    expect(cameraRulesFor('4d', 'inhabitant')).toEqual({ rotate: true, pan: 'free', zoom: true });
+  it('gives 3D and higher Inhabitants full orbit', () => {
+    for (const id of ['3d', '4d', '5d'] as const) {
+      expect(cameraRulesFor(id, 'inhabitant')).toEqual({ rotate: true, pan: 'free', zoom: true });
+    }
   });
 });
 

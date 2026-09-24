@@ -64,6 +64,33 @@ body {
   color: var(--muted);
 }
 
+#info-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  margin: 0 0 8px;
+  padding: 0;
+  list-style: none;
+  font-size: 12px;
+  color: var(--text);
+}
+
+#info-legend:empty {
+  display: none;
+}
+
+#info-legend li {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+#info-legend .swatch {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+}
+
 #info-view {
   color: var(--text) !important;
 }

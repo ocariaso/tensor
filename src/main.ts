@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { wrapAngle } from './angle';
+import { BRANCH_COLORS, layoutBranches } from './branches';
 import { CameraRig } from './cameraRig';
 import { cameraRulesFor, DIMENSIONS, SPECTATOR_NOTE, type DimensionId } from './dimensions';
 import { createUvSphere } from './geometry/uvSphere';
@@ -12,11 +13,11 @@ import { Transition } from './transition';
 // 128 x 256 uses half the point budget in a panorama-shaped grid.
 const LAT_SEGMENTS = 128;
 const LON_SEGMENTS = 256;
-// Each 4D slice is a coarse 2,048-point sphere so 90 slices stay cheap.
+// Each 4D slice is a coarse 2,048-point sphere so up to 180 slices stay cheap.
 const SLICE_LAT = 32;
 const SLICE_LON = 64;
 const PAST_SLICES = 60;
-const FUTURE_SLICES = 30;
+const FUTURE_SLICES = 24;
 const SUBJECT_SCALE_4D = 0.45;
 
 const canvas = document.querySelector<HTMLCanvasElement>('#stage')!;
@@ -24,6 +25,7 @@ const infoTag = document.querySelector<HTMLElement>('#info-tag')!;
 const infoTitle = document.querySelector<HTMLElement>('#info-title')!;
 const infoBody = document.querySelector<HTMLElement>('#info-body')!;
 const infoView = document.querySelector<HTMLElement>('#info-view')!;
+const infoLegend = document.querySelector<HTMLUListElement>('#info-legend')!;
 
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
 const pixelRatio = Math.min(window.devicePixelRatio, 2);
@@ -49,9 +51,11 @@ const settings: Settings = {
   timeFlows: true,
   scrub: 0,
   pastSeconds: 2.5,
-  futureSeconds: 1,
+  futureSeconds: 1.5,
   timeScale: 0.8,
   trailOpacity: 0.18,
+  branchCount: 4,
+  branchSpread: 1.2,
   pointSize: 4,
   opacity: 0.9,
   density: 2,
@@ -83,6 +87,28 @@ function applyState(): void {
   infoTitle.textContent = spec.title;
   infoBody.textContent = spec.body;
   infoView.textContent = settings.view === 'spectator' ? SPECTATOR_NOTE : spec.inhabitantNote;
+
+  const layout = layoutBranches(settings.branchCount);
+  const trailUniforms = trail.material.uniforms;
+  trailUniforms.uBranchCount.value = settings.branchCount;
+  trailUniforms.uBranchW.value = layout.offsets;
+  trailUniforms.uBranchP.value = layout.probabilities;
+  renderLegend(spec.id === '5d' ? layout.probabilities : []);
+}
+
+function renderLegend(probabilities: number[]): void {
+  const items = probabilities
+    .map((p, i) => ({ p, i }))
+    .filter(({ p }) => p > 0)
+    .map(({ p, i }) => {
+      const item = document.createElement('li');
+      const swatch = document.createElement('span');
+      swatch.className = 'swatch';
+      swatch.style.background = BRANCH_COLORS[i];
+      item.append(swatch, `${String.fromCharCode(65 + i)} ${Math.round(p * 100)}%`);
+      return item;
+    });
+  infoLegend.replaceChildren(...items);
 }
 
 const pane = createHud(settings, stats, { onStateChange: applyState });
@@ -154,6 +180,8 @@ renderer.setAnimationLoop((now) => {
 
   const trailUniforms = trail.material.uniforms;
   trailUniforms.uTemporal.value = temporal;
+  trailUniforms.uBranching.value = THREE.MathUtils.clamp(l - 4, 0, 1);
+  trailUniforms.uBranchSpread.value = settings.branchSpread;
   trailUniforms.uSubjectScale.value = subjectScale;
   trailUniforms.uVisibility.value = tubeVisibility.update(dt);
   trailUniforms.uMotionTime.value = motionTime;
@@ -165,10 +193,11 @@ renderer.setAnimationLoop((now) => {
   trailUniforms.uOpacity.value = settings.trailOpacity;
   trail.visible = trailUniforms.uTemporal.value * trailUniforms.uVisibility.value > 0.001;
 
+  const futureRuns = trailUniforms.uBranching.value > 0 ? settings.branchCount : 1;
   stats.points =
     (cloud.visible ? sphereData.count : 0) +
     (singularity.visible ? 1 : 0) +
-    (trail.visible ? sliceData.count * (PAST_SLICES + FUTURE_SLICES) : 0);
+    (trail.visible ? sliceData.count * (PAST_SLICES + FUTURE_SLICES * futureRuns) : 0);
 
   rig.update(dt);
   renderer.render(scene, rig.camera);
