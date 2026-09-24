@@ -30,7 +30,60 @@ body {
   touch-action: none;
 }
 
+.label-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+}
+
+.label {
+  padding: 2px 8px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+  color: var(--text);
+  background: rgba(12, 14, 28, 0.72);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+}
+
+.label.now,
+.label.you {
+  color: #fff;
+  border-color: rgba(255, 255, 255, 0.7);
+}
+
+.label.time {
+  color: #c9b8ff;
+}
+
+.label.axis {
+  font-weight: 500;
+  color: var(--muted);
+  background: transparent;
+  border-color: transparent;
+}
+
+.label.split,
+.label.seed {
+  font-weight: 500;
+  color: var(--muted);
+}
+
+.label.path {
+  color: #ffd27a;
+  border-color: rgba(255, 210, 122, 0.45);
+}
+
+/* Keeps the HUD above the scene labels. */
+.tp-dfwv {
+  z-index: 3;
+}
+
 #info {
+  z-index: 2;
   position: fixed;
   left: 16px;
   bottom: 48px;
@@ -152,6 +205,7 @@ body {
 }
 
 #keys {
+  z-index: 2;
   position: fixed;
   left: 16px;
   bottom: 14px;

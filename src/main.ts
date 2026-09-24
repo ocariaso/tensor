@@ -13,8 +13,20 @@ import { createSingularity } from './objects/singularity';
 import { createTrail, createTrailUniforms, type Trail } from './objects/trail';
 import { createTreeUniforms, type TreeUniforms } from './objects/treeUniforms';
 import { createUniversePath } from './objects/universePath';
-import { Transition } from './transition';
-import { clampUniverseCount, MAX_UNIVERSES, UNIVERSE_TINTS, universeLabel } from './universes';
+import { createGuideLines, setSegments } from './objects/guideLines';
+import { createLabelRenderer, Label } from './labels';
+import { branchOffset, subjectOffset, treeMotion } from './motion';
+import { levelBand, Transition } from './transition';
+import {
+  clampUniverseCount,
+  MAX_UNIVERSES,
+  UNIVERSE_AMPS,
+  UNIVERSE_PHASES,
+  UNIVERSE_SHIFTS,
+  UNIVERSE_SPLITS,
+  UNIVERSE_TINTS,
+  universeLabel,
+} from './universes';
 
 // 128 x 256 uses half the point budget in a panorama-shaped grid.
 const LAT_SEGMENTS = 128;
@@ -53,7 +65,18 @@ const trailUniforms = createTrailUniforms(pixelRatio);
 const singularity = createSingularity(pixelRatio);
 scene.add(singularity);
 
+const labelRenderer = createLabelRenderer();
+
+function addLabel(text: string, variant?: string): Label {
+  const label = new Label(text, variant);
+  scene.add(label.object);
+  return label;
+}
+
 interface TreeView {
+  seed: TreeSeed;
+  nameLabel: Label;
+  seedLabel: Label;
   row: number;
   /** 0 for the 7D row itself, -1 or +1 for the 8D orchard's side columns. */
   side: number;
@@ -67,7 +90,11 @@ interface TreeView {
 // Every tree reuses the shared uniforms and adds its own starting conditions on top.
 function makeTree(seed: TreeSeed, row: number, side: number): TreeView {
   const tree = createTreeUniforms(seed);
+  const isOurs = row === 0 && side === 0;
   const view: TreeView = {
+    seed,
+    nameLabel: addLabel('', isOurs ? 'you' : ''),
+    seedLabel: addLabel(isOurs ? 'our seed · far below this view' : `✦ seed · began ${seed.age.toFixed(1)} s ago`, 'seed'),
     row,
     side,
     tree,
@@ -84,6 +111,7 @@ function makeTree(seed: TreeSeed, row: number, side: number): TreeView {
   };
   scene.add(view.cloud, view.trail);
   if (view.parallel) scene.add(view.parallel);
+  if (!isOurs) view.nameLabel.setColor(seed.tint);
   return view;
 }
 
@@ -103,6 +131,29 @@ const PATH_CELLS: Array<[side: number, row: number]> = [
 ];
 const universePath = createUniversePath(PATH_CELLS.length);
 scene.add(universePath);
+
+const SPHERE_RADIUS = 1.2;
+const nowLabel = addLabel('NOW', 'now');
+const pastLabel = addLabel('PAST', 'time');
+const futureLabel = addLabel('FUTURE', 'time');
+const timeAxisLabel = addLabel('time ↑', 'axis');
+const timeAxis = createGuideLines(1, 0x8a8fa8);
+const branchLabels = BRANCH_COLORS.map((color) => {
+  const label = addLabel('', 'branch');
+  label.setColor(color);
+  return label;
+});
+const universeLabels = UNIVERSE_TINTS.map((tint, u) => {
+  const label = addLabel(universeLabel(u), 'universe');
+  label.setColor(tint);
+  return label;
+});
+const splitLabels = UNIVERSE_TINTS.map(() => addLabel('', 'split'));
+const pathLabel = addLabel('path between universes', 'path');
+const rhythmAxisLabel = addLabel('rhythm:  slower  ←  →  faster', 'axis');
+const birthAxisLabel = addLabel('different seeds  →', 'axis');
+const orchardGrid = createGuideLines(3 + TREES.length, 0x8a8fa8);
+scene.add(timeAxis, orchardGrid);
 
 const settings: Settings = {
   dimension: '0d',
@@ -256,11 +307,121 @@ function resize(): void {
   const width = window.innerWidth;
   const height = window.innerHeight;
   renderer.setSize(width, height, false);
+  labelRenderer.setSize(width, height);
   rig.resize(width, height);
 }
 window.addEventListener('resize', resize);
 resize();
 applyState();
+
+const at = new THREE.Vector3();
+const shift = new THREE.Vector3();
+
+// Each label group belongs to the level whose idea it explains, and fades out as the view moves past it.
+function placeLabels(
+  l: number,
+  motionTime: number,
+  subjectScale: number,
+  temporal: number,
+  branching: number,
+  parallelness: number,
+  orchardness: number,
+  visibility: number,
+  treeCount: number,
+): void {
+  const radius = SPHERE_RADIUS * subjectScale;
+  const ts = settings.timeScale;
+  const pastDt = -settings.pastSeconds * temporal;
+  const futureDt = settings.futureSeconds * temporal;
+
+  // 4D: our own world-tube, read along the time axis.
+  subjectOffset(motionTime, at);
+  nowLabel.update(at.add(shift.set(radius + 0.7, 0, 0)), levelBand(l, 4, 6));
+  subjectOffset(motionTime + pastDt, at);
+  pastLabel.update(at.add(shift.set(0, pastDt * ts - radius - 0.4, 0)), levelBand(l, 4, 6) * visibility);
+  subjectOffset(motionTime + futureDt, at);
+  futureLabel.update(at.add(shift.set(0, futureDt * ts + radius + 0.4, 0)), levelBand(l, 4, 4) * visibility);
+  const axisAlpha = levelBand(l, 4, 5) * visibility;
+  const axisTop = futureDt * ts + radius + 0.2;
+  setSegments(timeAxis, [[new THREE.Vector3(-2.4, pastDt * ts, 0), new THREE.Vector3(-2.4, axisTop, 0)]], axisAlpha * 0.6);
+  timeAxisLabel.update(at.set(-2.4, axisTop + 0.35, 0), axisAlpha);
+
+  // 5D: each branch's name and probability at the tip of its future.
+  const layout = layoutBranches(settings.branchCount);
+  branchLabels.forEach((label, b) => {
+    const p = layout.probabilities[b];
+    label.setText(`${String.fromCharCode(65 + b)} · ${Math.round(p * 100)}%`);
+    subjectOffset(motionTime + futureDt, at).add(branchOffset(b, layout.offsets[b], settings.branchSpread, futureDt, branching, shift));
+    at.y += futureDt * ts + radius + 0.35;
+    label.update(at, p > 0 ? levelBand(l, 5, 5) * visibility : 0);
+  });
+
+  // 6D: each universe's name above its present, and where it split from our history.
+  const universeCount = clampUniverseCount(settings.universeCount);
+  universeLabels.forEach((label, u) => {
+    subjectOffset(motionTime + UNIVERSE_PHASES[u], at).multiplyScalar(UNIVERSE_AMPS[u]);
+    if (u === 0) subjectOffset(motionTime, at);
+    at.x += UNIVERSE_SHIFTS[u] * settings.universeSpacing * parallelness;
+    at.y += futureDt * ts + radius + 0.45;
+    label.update(at, u < universeCount ? levelBand(l, 6, 6) * visibility : 0);
+  });
+  splitLabels.forEach((label, u) => {
+    const splitAgo = UNIVERSE_SPLITS[u] * settings.pastSeconds;
+    label.setText(`${universeLabel(u)} splits off · ${splitAgo.toFixed(1)} s ago`);
+    subjectOffset(motionTime - splitAgo, at);
+    at.x += Math.sign(UNIVERSE_SHIFTS[u]) * 1.6;
+    at.y -= splitAgo * ts;
+    label.update(at, u > 0 && u < universeCount ? levelBand(l, 6, 6) * visibility : 0);
+  });
+
+  // 7D and 8D: every tree's name above it, and each seed where its tree began.
+  forest.forEach((view) => {
+    const isOurs = view.row === 0 && view.side === 0;
+    const offset = view.tree.uTreeOffset.value as THREE.Vector3;
+    const presence = view.tree.uTreePresence.value as number;
+    const shortName = view.seed.label.split(' · ')[0];
+    const inOrchard = l > 7.5;
+    view.nameLabel.setText(
+      isOurs ? '★ Ours · you are here' : view.side !== 0 || !inOrchard ? view.seed.label : `${shortName} · normal rhythm`,
+    );
+    treeMotion(view.seed, motionTime, at).add(offset);
+    at.y += futureDt * ts + radius * view.seed.scale + 0.55;
+    const nameBand = view.side === 0 ? levelBand(l, 7, 8) : levelBand(l, 8, 8);
+    view.nameLabel.update(at, (isOurs ? 1 : presence) * nameBand);
+
+    if (view.side !== 0) {
+      view.seedLabel.update(at, 0);
+      return;
+    }
+    const seedDt = isOurs ? pastDt : -view.seed.age * temporal;
+    treeMotion(view.seed, motionTime + seedDt, at).add(offset);
+    at.y += seedDt * ts - (isOurs ? radius : 0) - 0.4;
+    const seedAlpha = view.row < treeCount ? levelBand(l, 7, 7) * (isOurs ? visibility : presence) : 0;
+    view.seedLabel.update(at, seedAlpha);
+  });
+
+  // 8D: a floor grid with named axes, and the path's name.
+  const orchardAlpha = levelBand(l, 8, 8) * visibility;
+  const depth = settings.treeSpacing * (treeCount - 1);
+  const floor = pastDt * ts - 1;
+  const columnX = settings.orchardSpacing * orchardness;
+  const grid: Array<[THREE.Vector3, THREE.Vector3]> = [];
+  for (const side of [-1, 0, 1]) {
+    grid.push([new THREE.Vector3(side * columnX, floor, 2), new THREE.Vector3(side * columnX, floor, -depth - 2)]);
+  }
+  for (let row = 0; row < treeCount; row++) {
+    const z = -settings.treeSpacing * row;
+    grid.push([new THREE.Vector3(-columnX - 2, floor, z), new THREE.Vector3(columnX + 2, floor, z)]);
+  }
+  setSegments(orchardGrid, grid, orchardAlpha * 0.35);
+  rhythmAxisLabel.update(at.set(0, floor, 3), orchardAlpha);
+  birthAxisLabel.update(at.set(columnX + 3.5, floor, -depth / 2), orchardAlpha);
+
+  const pathPositions = universePath.geometry.getAttribute('position') as THREE.BufferAttribute;
+  at.fromBufferAttribute(pathPositions, 2).add(shift.fromBufferAttribute(pathPositions, 3)).multiplyScalar(0.5);
+  at.y += 0.5;
+  pathLabel.update(at, settings.showPath ? orchardAlpha : 0);
+}
 
 let elapsed = 0;
 let spin = 0;
@@ -367,6 +528,9 @@ renderer.setAnimationLoop((now) => {
   pathUniforms.uOpacity.value = settings.showPath ? orchardness * visibility : 0;
   universePath.visible = pathUniforms.uOpacity.value > 0.001;
 
+  placeLabels(l, motionTime, subjectScale, temporal, branching, parallelness, orchardness, visibility, treeCount);
+
   rig.update(dt);
   renderer.render(scene, rig.camera);
+  labelRenderer.render(scene, rig.camera);
 });

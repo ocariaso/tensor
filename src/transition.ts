@@ -1,3 +1,9 @@
+/** Full strength while the level is within [low, high], fading out over half a level beyond either end. */
+export function levelBand(level: number, low: number, high: number): number {
+  const outside = Math.max(low - level, level - high, 0);
+  return Math.min(1, Math.max(0, 1 - outside * 2));
+}
+
 export function easeInOutCubic(t: number): number {
   return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
 }

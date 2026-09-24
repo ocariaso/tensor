@@ -1,5 +1,18 @@
 import { describe, expect, it } from 'vitest';
-import { easeInOutCubic, Transition } from './transition';
+import { easeInOutCubic, levelBand, Transition } from './transition';
+
+describe('levelBand', () => {
+  it('is fully on inside the band', () => {
+    expect(levelBand(5, 5, 5)).toBe(1);
+    expect(levelBand(4.6, 4, 6)).toBe(1);
+  });
+
+  it('fades out over half a level beyond either end', () => {
+    expect(levelBand(4.75, 5, 5)).toBeCloseTo(0.5);
+    expect(levelBand(4.5, 5, 5)).toBe(0);
+    expect(levelBand(6.4, 4, 6)).toBeCloseTo(0.2);
+  });
+});
 
 describe('easeInOutCubic', () => {
   it('maps the endpoints and midpoint exactly', () => {
