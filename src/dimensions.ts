@@ -1,4 +1,4 @@
-export type DimensionId = '0d' | '1d' | '2d';
+export type DimensionId = '0d' | '1d' | '2d' | '3d';
 export type ViewMode = 'inhabitant' | 'spectator';
 export type PanAxes = 'none' | 'x' | 'xy' | 'free';
 
@@ -48,6 +48,15 @@ export const DIMENSIONS: Record<DimensionId, DimensionSpec> = {
     level: 2,
     inhabitant: { rotate: false, pan: 'xy', zoom: true },
     inhabitantNote: 'Inhabitant view: you can slide and zoom across the plane, but never tilt out of it.',
+  },
+  '3d': {
+    id: '3d',
+    tag: 'Three Dimensions',
+    title: '3D · The Sphere',
+    body: 'The disc curls up and closes into a sphere with length, width and depth. The amber meridian shows it spinning, and waves now travel from pole to pole.',
+    level: 3,
+    inhabitant: FREE,
+    inhabitantNote: 'Inhabitant view: this is our own world, so you can orbit, pan and zoom freely.',
   },
 };
 

@@ -21,6 +21,10 @@ describe('camera rules', () => {
   it('lets a 2D Inhabitant pan and zoom but never tilt', () => {
     expect(cameraRulesFor('2d', 'inhabitant')).toEqual({ rotate: false, pan: 'xy', zoom: true });
   });
+
+  it('gives a 3D Inhabitant full orbit', () => {
+    expect(cameraRulesFor('3d', 'inhabitant')).toEqual({ rotate: true, pan: 'free', zoom: true });
+  });
 });
 
 describe('dimension ladder', () => {

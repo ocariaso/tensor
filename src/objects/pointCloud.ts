@@ -21,6 +21,8 @@ export function createPointCloud(
     uniforms: {
       uLevel: { value: 0 },
       uExtent: { value: 1.7 },
+      uSphereRadius: { value: 1.2 },
+      uSpin: { value: 0 },
       uLatSegments: { value: latSegments },
       uLonSegments: { value: lonSegments },
       uSpriteWorld: { value: 0.04 },

@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { wrapAngle } from './angle';
 import { CameraRig } from './cameraRig';
 import { cameraRulesFor, DIMENSIONS, SPECTATOR_NOTE, type DimensionId } from './dimensions';
 import { createUvSphere } from './geometry/uvSphere';
@@ -34,6 +35,8 @@ const settings: Settings = {
   dimension: '0d',
   view: 'spectator',
   transitionSeconds: 1.6,
+  spin: true,
+  spinSpeed: 0.35,
   pointSize: 4,
   opacity: 0.9,
   density: 2,
@@ -89,6 +92,7 @@ resize();
 applyState();
 
 let elapsed = 0;
+let spin = 0;
 let last = performance.now();
 
 renderer.setAnimationLoop((now) => {
@@ -98,9 +102,12 @@ renderer.setAnimationLoop((now) => {
   stats.fps += (1 / Math.max(dt, 1e-4) - stats.fps) * 0.05;
 
   const l = level.update(dt);
+  // Spin only builds up on the finished sphere so leaving 3D unwinds at most half a turn.
+  if (settings.spin && l >= 3) spin = wrapAngle(spin + dt * settings.spinSpeed);
 
   const cloudUniforms = cloud.material.uniforms;
   cloudUniforms.uLevel.value = l;
+  cloudUniforms.uSpin.value = spin;
   cloudUniforms.uTime.value = elapsed;
   cloudUniforms.uOmega.value = settings.omega;
   cloudUniforms.uAmplitude.value = settings.amplitude;
