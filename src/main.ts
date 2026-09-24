@@ -137,7 +137,10 @@ const nowLabel = addLabel('NOW', 'now');
 const pastLabel = addLabel('PAST', 'time');
 const futureLabel = addLabel('FUTURE', 'time');
 const timeAxisLabel = addLabel('time ↑', 'axis');
-const timeAxis = createGuideLines(1, 0x8a8fa8);
+const axisFutureLabel = addLabel('future', 'axis');
+const axisNowLabel = addLabel('now', 'axis');
+const axisPastLabel = addLabel('past', 'axis');
+const timeAxis = createGuideLines(2, 0x8a8fa8);
 const branchLabels = BRANCH_COLORS.map((color) => {
   const label = addLabel('', 'branch');
   label.setColor(color);
@@ -341,10 +344,26 @@ function placeLabels(
   pastLabel.update(at.add(shift.set(0, pastDt * ts - radius - 0.4, 0)), levelBand(l, 4, 6) * visibility);
   subjectOffset(motionTime + futureDt, at);
   futureLabel.update(at.add(shift.set(0, futureDt * ts + radius + 0.4, 0)), levelBand(l, 4, 4) * visibility);
-  const axisAlpha = levelBand(l, 4, 5) * visibility;
+  // Time stays the vertical direction at every level, so its axis moves out to the scene's edge as the scene widens.
+  const axisAlpha = levelBand(l, 4, 8) * visibility;
+  const axisX = -(2.4 + 0.6 * branching + 0.6 * parallelness + (settings.orchardSpacing - 1.1) * orchardness);
+  const axisZ = (-settings.treeSpacing * (treeCount - 1) * THREE.MathUtils.clamp(l - 6, 0, 1)) / 2;
   const axisTop = futureDt * ts + radius + 0.2;
-  setSegments(timeAxis, [[new THREE.Vector3(-2.4, pastDt * ts, 0), new THREE.Vector3(-2.4, axisTop, 0)]], axisAlpha * 0.6);
-  timeAxisLabel.update(at.set(-2.4, axisTop + 0.35, 0), axisAlpha);
+  const axisBottom = pastDt * ts;
+  setSegments(
+    timeAxis,
+    [
+      [new THREE.Vector3(axisX, axisBottom, axisZ), new THREE.Vector3(axisX, axisTop, axisZ)],
+      [new THREE.Vector3(axisX - 0.15, 0, axisZ), new THREE.Vector3(axisX + 0.15, 0, axisZ)],
+    ],
+    axisAlpha * 0.6,
+  );
+  timeAxisLabel.update(at.set(axisX, axisTop + 0.35, axisZ), axisAlpha);
+  // Tick names sit just inside the axis so they stay on screen however wide the scene gets.
+  axisFutureLabel.update(at.set(axisX + 0.7, axisTop - 0.2, axisZ), axisAlpha);
+  axisNowLabel.setText(l > 5.5 ? 'now · in every universe' : 'now');
+  axisNowLabel.update(at.set(axisX + (l > 5.5 ? 1.5 : 0.6), 0.25, axisZ), axisAlpha);
+  axisPastLabel.update(at.set(axisX + 0.6, axisBottom + 0.2, axisZ), axisAlpha);
 
   // 5D: each branch's name and probability at the tip of its future.
   const layout = layoutBranches(settings.branchCount);
