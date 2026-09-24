@@ -44,6 +44,9 @@ const FEATURES = 5;
 const FORGETTING = 0.999;
 // How quickly the noise estimate follows new errors.
 const NOISE_RATE = 0.01;
+// Bounds on how sure the model may be about each weight; too sure and it stops adapting, too unsure and it swings.
+const MIN_COVARIANCE = 1e-6;
+const MAX_COVARIANCE = 100;
 // A deliberately wide starting guess, so an untrained model reports low confidence.
 const INITIAL_NOISE_VARIANCE = 1;
 
@@ -140,6 +143,16 @@ export class LinearMotionModel implements MotionModel {
       for (let j = 0; j < FEATURES; j++) {
         P[i * FEATURES + j] = (P[i * FEATURES + j] - this.gain[i] * this.pPhi[j]) / FORGETTING;
       }
+    }
+    // Rounding slowly breaks P's symmetry and forgetting can inflate it, which in time wrecks the weights,
+    // so it is re-symmetrised and its diagonal kept within bounds after every lesson.
+    for (let i = 0; i < FEATURES; i++) {
+      for (let j = i + 1; j < FEATURES; j++) {
+        const mean = (P[i * FEATURES + j] + P[j * FEATURES + i]) / 2;
+        P[i * FEATURES + j] = mean;
+        P[j * FEATURES + i] = mean;
+      }
+      P[i * FEATURES + i] = Math.min(MAX_COVARIANCE, Math.max(MIN_COVARIANCE, P[i * FEATURES + i]));
     }
     this.lessons++;
   }

@@ -127,3 +127,14 @@ describe('forecast limits', () => {
     }
   });
 });
+
+describe('long-run stability', () => {
+  it('keeps sensible weights and noise after twenty minutes of learning', () => {
+    const learner = new MotionLearner(new LinearMotionModel(), INTERVAL);
+    record(new RandomWalk(mulberry32(31)), 1200, learner);
+    const w = (learner.model as LinearMotionModel).weights().x;
+    expect(w[2]).toBeGreaterThan(0.9);
+    expect(w[2]).toBeLessThan(1.01);
+    expect(learner.model.noise().x).toBeLessThan(0.2);
+  }, 30_000);
+});
