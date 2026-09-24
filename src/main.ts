@@ -30,6 +30,7 @@ import { createHistoryUniforms, syncHistoryUniforms } from './objects/historyUni
 import { CONFIDENCE_RADIUS, forecast, MotionLearner, VELOCITY_WINDOW } from './ml/forecast';
 import { LinearMotionModel } from './ml/motionModel';
 import { PredictionCheck, type CheckResult } from './ml/predictionCheck';
+import { forgetLearning, loadLearning, saveLearning, type KeyValueStore } from './ml/modelStore';
 import { MotionTrack } from './motionTrack';
 import {
   clockRate,
@@ -107,6 +108,31 @@ const learner = new MotionLearner(new LinearMotionModel(), HISTORY_INTERVAL);
 const check = new PredictionCheck(CHECK_HORIZON, CONFIDENCE_RADIUS);
 const halfCheck = new PredictionCheck(CHECK_HORIZON / 2, CONFIDENCE_RADIUS);
 let ghost: CheckResult | null = null;
+
+// What the model learned is kept in the browser, so a reload resumes instead of starting over.
+const SAVE_EVERY_MS = 5000;
+// A few seconds of lessons are not worth resuming, so a reset followed by a quick reload still starts fresh.
+const MIN_LESSONS_TO_SAVE = 300;
+const learningStore = browserStore();
+const scorekeepers = { one: check, half: halfCheck };
+const resumed = learningStore !== null && loadLearning(learningStore, learner.model, scorekeepers);
+let lastSaved = performance.now();
+
+// Reading localStorage itself can throw when site data is blocked, so it is fetched defensively.
+function browserStore(): KeyValueStore | null {
+  try {
+    return window.localStorage;
+  } catch {
+    return null;
+  }
+}
+
+function saveProgress(): void {
+  if (learningStore && learner.model.lessons >= MIN_LESSONS_TO_SAVE) saveLearning(learningStore, learner.model, scorekeepers);
+  lastSaved = performance.now();
+}
+
+window.addEventListener('pagehide', saveProgress);
 const historyUniforms = createHistoryUniforms(track);
 const cloudUniforms = { ...createCloudUniforms(LAT_SEGMENTS, LON_SEGMENTS, pixelRatio), ...historyUniforms };
 const trailUniforms = { ...createTrailUniforms(pixelRatio), ...historyUniforms };
@@ -315,7 +341,9 @@ const stats: Stats = {
   errorOne: 0,
   claimed: 0,
   cameTrue: 0,
+  memory: 'fresh start',
 };
+if (resumed) stats.memory = `resumed · ${learner.model.lessons.toLocaleString()} lessons`;
 
 // Deep links: ?dim=1d&view=inhabitant
 const params = new URLSearchParams(window.location.search);
@@ -454,6 +482,8 @@ function futureKind(): string {
 
 // Forgets everything learned, so the model can be watched learning again from scratch.
 function resetModel(): void {
+  if (learningStore) forgetLearning(learningStore);
+  stats.memory = 'fresh start';
   learner.reset();
   check.reset();
   halfCheck.reset();
@@ -1051,6 +1081,7 @@ function updatePrediction(): void {
   halfCheck.settle(now, present.x, present.z);
 
   stats.lessons = learner.model.lessons;
+  if (performance.now() - lastSaved > SAVE_EVERY_MS) saveProgress();
   stats.confidenceHalf = steady('half', f.confidence[halfAhead]);
   stats.confidenceOne = steady('one', f.confidence[oneAhead]);
   stats.errorHalf = halfCheck.averageError;

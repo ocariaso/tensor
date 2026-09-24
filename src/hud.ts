@@ -57,6 +57,8 @@ export interface Stats {
   /** Over recent one-second predictions: confidence claimed, and how often they actually came true. */
   claimed: number;
   cameTrue: number;
+  /** Whether the model started fresh or resumed what it learned before the page was reloaded. */
+  memory: string;
 }
 
 export interface HudCallbacks {
@@ -116,6 +118,7 @@ export function createHud(settings: Settings, stats: Stats, callbacks: HudCallba
   const asUnits = (v: number) => `${v.toFixed(2)} units`;
   const learning = pane.addFolder({ title: '4D · Prediction (learned)' });
   learning.addBinding(settings, 'showPrediction', { label: 'show prediction' }).on('change', callbacks.onStateChange);
+  learning.addBinding(stats, 'memory', { label: 'memory', readonly: true });
   learning.addBinding(stats, 'lessons', { label: 'lessons', readonly: true, format: (v: number) => v.toFixed(0) });
   learning.addBinding(stats, 'confidenceHalf', { label: 'confident +0.5 s', readonly: true, format: asPercent });
   learning.addBinding(stats, 'confidenceOne', { label: 'confident +1 s', readonly: true, format: asPercent });

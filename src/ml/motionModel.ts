@@ -19,6 +19,24 @@ export interface MotionModel {
   noise(): { x: number; z: number };
   reset(): void;
   readonly lessons: number;
+  /** Everything learned, as plain data that can be stored. */
+  save(): unknown;
+  /** Restores what was learned from saved data, returning false and changing nothing if the data does not fit. */
+  load(data: unknown): boolean;
+}
+
+interface SavedLinearModel {
+  kind: 'linear';
+  weightsX: number[];
+  weightsZ: number[];
+  covariance: number[];
+  varianceX: number;
+  varianceZ: number;
+  lessons: number;
+}
+
+function finiteArray(value: unknown, length: number): value is number[] {
+  return Array.isArray(value) && value.length === length && value.every((v) => typeof v === 'number' && Number.isFinite(v));
 }
 
 const FEATURES = 5;
@@ -53,6 +71,33 @@ export class LinearMotionModel implements MotionModel {
     this.varianceX = INITIAL_NOISE_VARIANCE;
     this.varianceZ = INITIAL_NOISE_VARIANCE;
     this.lessons = 0;
+  }
+
+  save(): SavedLinearModel {
+    return {
+      kind: 'linear',
+      weightsX: Array.from(this.weightsX),
+      weightsZ: Array.from(this.weightsZ),
+      covariance: Array.from(this.covariance),
+      varianceX: this.varianceX,
+      varianceZ: this.varianceZ,
+      lessons: this.lessons,
+    };
+  }
+
+  load(data: unknown): boolean {
+    const d = data as Partial<SavedLinearModel> | null;
+    if (!d || d.kind !== 'linear') return false;
+    if (!finiteArray(d.weightsX, FEATURES) || !finiteArray(d.weightsZ, FEATURES)) return false;
+    if (!finiteArray(d.covariance, FEATURES * FEATURES)) return false;
+    if (![d.varianceX, d.varianceZ, d.lessons].every((v) => typeof v === 'number' && Number.isFinite(v) && v >= 0)) return false;
+    this.weightsX.set(d.weightsX);
+    this.weightsZ.set(d.weightsZ);
+    this.covariance.set(d.covariance);
+    this.varianceX = d.varianceX!;
+    this.varianceZ = d.varianceZ!;
+    this.lessons = d.lessons!;
+    return true;
   }
 
   predictVelocity(state: MotionState): { vx: number; vz: number } {

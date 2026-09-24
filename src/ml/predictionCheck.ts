@@ -59,6 +59,24 @@ export class PredictionCheck {
     return result;
   }
 
+  /** The running scores and calibration, without predictions still waiting for their moment. */
+  save(): { averageError: number; claimed: number; cameTrue: number; checks: number; noiseScale: number } {
+    const { averageError, claimed, cameTrue, checks, noiseScale } = this;
+    return { averageError, claimed, cameTrue, checks, noiseScale };
+  }
+
+  load(data: unknown): boolean {
+    const d = data as Record<string, unknown> | null;
+    const keys = ['averageError', 'claimed', 'cameTrue', 'checks', 'noiseScale'] as const;
+    if (!d || !keys.every((k) => typeof d[k] === 'number' && Number.isFinite(d[k]) && (d[k] as number) >= 0)) return false;
+    this.averageError = d.averageError as number;
+    this.claimed = d.claimed as number;
+    this.cameTrue = d.cameTrue as number;
+    this.checks = d.checks as number;
+    this.noiseScale = d.noiseScale as number;
+    return true;
+  }
+
   reset(): void {
     this.pending = [];
     this.averageError = 0;
