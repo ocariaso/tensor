@@ -119,6 +119,7 @@ export function createHud(settings: Settings, stats: Stats, callbacks: HudCallba
 
   // Folders for hidden levels stay built but out of sight until those levels return.
   for (const [folder, level] of [
+    [branches, 5],
     [parallel, 6],
     [forest, 7],
     [orchard, 8],

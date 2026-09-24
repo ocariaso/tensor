@@ -30,9 +30,9 @@ describe('camera rules', () => {
 });
 
 describe('visible dimensions', () => {
-  it('offers 0D to 5D and hides the higher levels', () => {
-    for (const id of ['0d', '1d', '2d', '3d', '4d', '5d']) expect(isVisibleDimension(id)).toBe(true);
-    for (const id of ['6d', '7d', '8d', '9d', 'xd']) expect(isVisibleDimension(id)).toBe(false);
+  it('offers 0D to 4D and hides the higher levels', () => {
+    for (const id of ['0d', '1d', '2d', '3d', '4d']) expect(isVisibleDimension(id)).toBe(true);
+    for (const id of ['5d', '6d', '7d', '8d', '9d', 'xd']) expect(isVisibleDimension(id)).toBe(false);
   });
 });
 
