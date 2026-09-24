@@ -7,6 +7,12 @@ export interface Settings {
   transitionSeconds: number;
   spin: boolean;
   spinSpeed: number;
+  timeFlows: boolean;
+  scrub: number;
+  pastSeconds: number;
+  futureSeconds: number;
+  timeScale: number;
+  trailOpacity: number;
   pointSize: number;
   opacity: number;
   density: number;
@@ -32,7 +38,13 @@ export function createHud(settings: Settings, stats: Stats, callbacks: HudCallba
   world
     .addBinding(settings, 'dimension', {
       label: 'dimension',
-      options: { '0D · Singularity': '0d', '1D · Line': '1d', '2D · Plane': '2d', '3D · Sphere': '3d' },
+      options: {
+        '0D · Singularity': '0d',
+        '1D · Line': '1d',
+        '2D · Plane': '2d',
+        '3D · Sphere': '3d',
+        '4D · Spacetime': '4d',
+      },
     })
     .on('change', callbacks.onStateChange);
   world
@@ -52,7 +64,15 @@ export function createHud(settings: Settings, stats: Stats, callbacks: HudCallba
   sphere.addBinding(settings, 'spin', { label: 'spin' });
   sphere.addBinding(settings, 'spinSpeed', { label: 'speed (rad/s)', min: 0, max: 3, step: 0.05 });
 
-  const look = pane.addFolder({ title: 'Appearance' });
+  const time = pane.addFolder({ title: '4D · Time (T)' });
+  time.addBinding(settings, 'timeFlows', { label: 'time flows' });
+  time.addBinding(settings, 'scrub', { label: 'T scrub (s)', min: -3, max: 3, step: 0.01 });
+  time.addBinding(settings, 'pastSeconds', { label: 'past (s)', min: 0.5, max: 3, step: 0.1 });
+  time.addBinding(settings, 'futureSeconds', { label: 'future (s)', min: 0, max: 2, step: 0.1 });
+  time.addBinding(settings, 'timeScale', { label: 'units / s', min: 0.2, max: 2, step: 0.05 });
+  time.addBinding(settings, 'trailOpacity', { label: 'tube opacity', min: 0.02, max: 0.6, step: 0.01 });
+
+  const look = pane.addFolder({ title: 'Appearance', expanded: false });
   look.addBinding(settings, 'coreSize', { label: '0D size (px)', min: 16, max: 160, step: 1 });
   look.addBinding(settings, 'pointSize', { label: 'point size', min: 1, max: 8, step: 0.1 });
   look.addBinding(settings, 'opacity', { label: 'brightness', min: 0.05, max: 1, step: 0.01 });

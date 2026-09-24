@@ -1,6 +1,7 @@
 uniform float uLevel;        // 0 = point, 1 = line, 2 = disc, 3 = sphere
 uniform float uExtent;       // radius of the line and disc
 uniform float uSphereRadius;
+uniform float uSubjectScale; // shrinks the subject in 4D so its world-line's bends read clearly
 uniform float uSpin;         // radians about the vertical axis, kept within [-PI, PI]
 uniform float uLatSegments;
 uniform float uLonSegments;
@@ -9,14 +10,13 @@ uniform float uDensity;      // how many sprites may overlap one spot of the sur
 uniform float uPointSize;
 uniform float uPixelRatio;
 uniform float uTime;
+uniform float uMotionTime;
 uniform float uOmega;
 uniform float uAmplitude;
 uniform float uWaveNumber;
 
 varying vec3 vColor;
 varying float vAlpha;
-
-const float PI = 3.141592653589793;
 
 void main() {
   float stretch = clamp(uLevel, 0.0, 1.0);
@@ -36,7 +36,7 @@ void main() {
   float bend = s * curvature;
   float ringRadius = curvature > 1e-4 ? sin(bend) / curvature : s;
   float depth = curvature > 1e-4 ? (1.0 - cos(bend)) / curvature : 0.0;
-  float scale = mix(1.0, uSphereRadius * PI / uExtent, wrap);
+  float scale = mix(1.0, uSphereRadius * PI / uExtent, wrap) * uSubjectScale;
   vec3 p = vec3(cos(angle) * ringRadius, sin(angle) * ringRadius, wrap * uExtent / PI - depth) * scale;
 
   vec3 n = vec3(cos(angle) * sin(bend), sin(angle) * sin(bend), cos(bend));
@@ -44,10 +44,10 @@ void main() {
   // The sphere tips its pole upright as it closes, then spins about that vertical axis.
   float tilt = -wrap * 0.5 * PI;
   mat3 tipUp = mat3(1.0, 0.0, 0.0, 0.0, cos(tilt), sin(tilt), 0.0, -sin(tilt), cos(tilt));
-  float spin = uSpin * wrap;
-  mat3 turn = mat3(cos(spin), 0.0, -sin(spin), 0.0, 1.0, 0.0, sin(spin), 0.0, cos(spin));
+  mat3 turn = spinY(uSpin * wrap);
   p = turn * tipUp * p;
   n = turn * tipUp * n;
+  p += subjectOffset(uMotionTime) * wrap;
 
   vec4 mvPosition = modelViewMatrix * vec4(p, 1.0);
   gl_Position = projectionMatrix * mvPosition;

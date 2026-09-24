@@ -1,4 +1,4 @@
-export type DimensionId = '0d' | '1d' | '2d' | '3d';
+export type DimensionId = '0d' | '1d' | '2d' | '3d' | '4d';
 export type ViewMode = 'inhabitant' | 'spectator';
 export type PanAxes = 'none' | 'x' | 'xy' | 'free';
 
@@ -53,10 +53,19 @@ export const DIMENSIONS: Record<DimensionId, DimensionSpec> = {
     id: '3d',
     tag: 'Three Dimensions',
     title: '3D · The Sphere',
-    body: 'The disc curls up and closes into a sphere with length, width and depth. The amber meridian shows it spinning, and waves now travel from pole to pole.',
+    body: 'The disc curls up and closes into a sphere with length, width and depth. It drifts like a person shifting their weight, the amber meridian shows it spinning, and waves travel from pole to pole.',
     level: 3,
     inhabitant: FREE,
     inhabitantNote: 'Inhabitant view: this is our own world, so you can orbit, pan and zoom freely.',
+  },
+  '4d': {
+    id: '4d',
+    tag: 'Four Dimensions',
+    title: '4D · Spacetime',
+    body: 'Time becomes a direction you can see, pointing up. Past moments stack below into a solid world-tube and future moments rise above as ghosts. The motion here is a formula, so the future already exists, like in a block universe.',
+    level: 4,
+    inhabitant: FREE,
+    inhabitantNote: 'Inhabitant view: like us, you only experience the present moment, so the world-tube is hidden. Switch to Spectator to see all of time at once.',
   },
 };
 

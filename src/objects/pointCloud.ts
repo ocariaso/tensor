@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import type { PointCloudData } from '../geometry/uvSphere';
-import vertexShader from '../shaders/cloud.vert.glsl?raw';
+import subjectChunk from '../shaders/subject.glsl?raw';
+import cloudVertex from '../shaders/cloud.vert.glsl?raw';
 import fragmentShader from '../shaders/cloud.frag.glsl?raw';
 
 export type PointCloud = THREE.Points<THREE.BufferGeometry, THREE.ShaderMaterial>;
@@ -16,12 +17,13 @@ export function createPointCloud(
   geometry.setAttribute('uv', new THREE.BufferAttribute(data.uvs, 2));
 
   const material = new THREE.ShaderMaterial({
-    vertexShader,
+    vertexShader: `${subjectChunk}\n${cloudVertex}`,
     fragmentShader,
     uniforms: {
       uLevel: { value: 0 },
       uExtent: { value: 1.7 },
       uSphereRadius: { value: 1.2 },
+      uSubjectScale: { value: 1 },
       uSpin: { value: 0 },
       uLatSegments: { value: latSegments },
       uLonSegments: { value: lonSegments },
@@ -31,6 +33,7 @@ export function createPointCloud(
       uOpacity: { value: 0.35 },
       uPixelRatio: { value: pixelRatio },
       uTime: { value: 0 },
+      uMotionTime: { value: 0 },
       uOmega: { value: 2 },
       uAmplitude: { value: 0.35 },
       uWaveNumber: { value: 4 },

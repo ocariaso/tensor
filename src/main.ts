@@ -6,11 +6,18 @@ import { createUvSphere } from './geometry/uvSphere';
 import { createHud, type Settings, type Stats } from './hud';
 import { createPointCloud } from './objects/pointCloud';
 import { createSingularity } from './objects/singularity';
+import { createTrail } from './objects/trail';
 import { Transition } from './transition';
 
 // 128 x 256 uses half the point budget in a panorama-shaped grid.
 const LAT_SEGMENTS = 128;
 const LON_SEGMENTS = 256;
+// Each 4D slice is a coarse 2,048-point sphere so 90 slices stay cheap.
+const SLICE_LAT = 32;
+const SLICE_LON = 64;
+const PAST_SLICES = 60;
+const FUTURE_SLICES = 30;
+const SUBJECT_SCALE_4D = 0.45;
 
 const canvas = document.querySelector<HTMLCanvasElement>('#stage')!;
 const infoTag = document.querySelector<HTMLElement>('#info-tag')!;
@@ -29,7 +36,9 @@ const rig = new CameraRig(canvas);
 const sphereData = createUvSphere(LAT_SEGMENTS, LON_SEGMENTS);
 const cloud = createPointCloud(sphereData, LAT_SEGMENTS, LON_SEGMENTS, pixelRatio);
 const singularity = createSingularity(pixelRatio);
-scene.add(cloud, singularity);
+const sliceData = createUvSphere(SLICE_LAT, SLICE_LON);
+const trail = createTrail(sliceData, PAST_SLICES, FUTURE_SLICES, pixelRatio);
+scene.add(cloud, singularity, trail);
 
 const settings: Settings = {
   dimension: '0d',
@@ -37,6 +46,12 @@ const settings: Settings = {
   transitionSeconds: 1.6,
   spin: true,
   spinSpeed: 0.35,
+  timeFlows: true,
+  scrub: 0,
+  pastSeconds: 2.5,
+  futureSeconds: 1,
+  timeScale: 0.8,
+  trailOpacity: 0.18,
   pointSize: 4,
   opacity: 0.9,
   density: 2,
@@ -55,11 +70,13 @@ const viewParam = params.get('view');
 if (viewParam === 'spectator' || viewParam === 'inhabitant') settings.view = viewParam;
 
 const level = new Transition(DIMENSIONS[settings.dimension].level, settings.transitionSeconds);
+const tubeVisibility = new Transition(settings.view === 'spectator' ? 1 : 0, 0.6);
 
 function applyState(): void {
   const spec = DIMENSIONS[settings.dimension];
   level.duration = settings.transitionSeconds;
   level.retarget(spec.level);
+  tubeVisibility.retarget(settings.view === 'spectator' ? 1 : 0);
   rig.apply(cameraRulesFor(settings.dimension, settings.view));
 
   infoTag.textContent = spec.tag;
@@ -98,17 +115,24 @@ let last = performance.now();
 renderer.setAnimationLoop((now) => {
   const dt = Math.min((now - last) / 1000, 0.1);
   last = now;
-  elapsed += dt;
   stats.fps += (1 / Math.max(dt, 1e-4) - stats.fps) * 0.05;
+  const worldDt = settings.timeFlows ? dt : 0;
+  elapsed += worldDt;
+  const motionTime = elapsed + settings.scrub;
 
   const l = level.update(dt);
+  const temporal = THREE.MathUtils.clamp(l - 3, 0, 1);
+  const subjectScale = THREE.MathUtils.lerp(1, SUBJECT_SCALE_4D, temporal);
+  const spinning = settings.spin && l >= 3;
   // Spin only builds up on the finished sphere so leaving 3D unwinds at most half a turn.
-  if (settings.spin && l >= 3) spin = wrapAngle(spin + dt * settings.spinSpeed);
+  if (spinning) spin = wrapAngle(spin + worldDt * settings.spinSpeed);
 
   const cloudUniforms = cloud.material.uniforms;
   cloudUniforms.uLevel.value = l;
   cloudUniforms.uSpin.value = spin;
   cloudUniforms.uTime.value = elapsed;
+  cloudUniforms.uMotionTime.value = motionTime;
+  cloudUniforms.uSubjectScale.value = subjectScale;
   cloudUniforms.uOmega.value = settings.omega;
   cloudUniforms.uAmplitude.value = settings.amplitude;
   cloudUniforms.uWaveNumber.value = settings.waveNumber;
@@ -128,7 +152,23 @@ renderer.setAnimationLoop((now) => {
   coreUniforms.uPresence.value = 1 - THREE.MathUtils.smoothstep(l, 0, 0.15);
   singularity.visible = coreUniforms.uPresence.value > 0.001;
 
-  stats.points = (cloud.visible ? sphereData.count : 0) + (singularity.visible ? 1 : 0);
+  const trailUniforms = trail.material.uniforms;
+  trailUniforms.uTemporal.value = temporal;
+  trailUniforms.uSubjectScale.value = subjectScale;
+  trailUniforms.uVisibility.value = tubeVisibility.update(dt);
+  trailUniforms.uMotionTime.value = motionTime;
+  trailUniforms.uPast.value = settings.pastSeconds;
+  trailUniforms.uFuture.value = settings.futureSeconds;
+  trailUniforms.uTimeScale.value = settings.timeScale;
+  trailUniforms.uSpin.value = spin;
+  trailUniforms.uSpinRate.value = spinning && settings.timeFlows ? settings.spinSpeed : 0;
+  trailUniforms.uOpacity.value = settings.trailOpacity;
+  trail.visible = trailUniforms.uTemporal.value * trailUniforms.uVisibility.value > 0.001;
+
+  stats.points =
+    (cloud.visible ? sphereData.count : 0) +
+    (singularity.visible ? 1 : 0) +
+    (trail.visible ? sliceData.count * (PAST_SLICES + FUTURE_SLICES) : 0);
 
   rig.update(dt);
   renderer.render(scene, rig.camera);
