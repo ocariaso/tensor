@@ -22,6 +22,8 @@ uniform float uBranchSpread; // W distance a branch reaches after one second
 uniform float uBranchW[5];
 uniform float uBranchP[5];
 uniform vec3 uBranchColors[5];
+uniform float uFocusBranch;  // branch in focus, or -1 for no focus
+uniform float uOthersAlpha;  // how visible the other branches stay while one is in focus
 uniform float uUniverseCount;
 uniform float uUniverseSpacing;
 uniform float uUniverseShift[5];
@@ -30,8 +32,34 @@ uniform float uUniverseAmp[5];
 uniform float uUniverseSplit[5]; // how long ago each universe split from ours, as a share of the past
 uniform vec3 uUniverseTints[5];
 
+uniform float uBranchTempo[5];
+uniform float uBranchSway[5];
+uniform float uBranchSpinRate[5];
+
 varying vec3 vColor;
 varying float vAlpha;
+
+// Its slope is zero at the split, so a branch leaves the present with the shared position and speed.
+float branchBlend(float dt) {
+  return dt <= 0.0 ? 0.0 : (1.0 - exp(-(dt * dt) / (0.35 * 0.35))) * uBranching;
+}
+
+// A parallel universe follows its tree's history until its split, then peels away onto its own path.
+vec3 historyAt(int u, float dt, float splitAgo) {
+  float apart = u == 0 ? 1.0 : smoothstep(0.0, splitAgo, dt + splitAgo);
+  vec3 ours = treeMotion(uMotionTime + dt);
+  vec3 theirs = treeMotion(uMotionTime + dt + uUniversePhase[u]) * uUniverseAmp[u];
+  return mix(ours, theirs, apart);
+}
+
+// After the present, each branch gradually takes on its own tempo and sway.
+vec3 branchPath(int u, int b, float dt, float splitAgo) {
+  vec3 base = historyAt(u, dt, splitAgo);
+  float blend = branchBlend(dt);
+  if (blend <= 0.0) return base;
+  vec3 variant = historyAt(u, dt * uBranchTempo[b], splitAgo) * uBranchSway[b];
+  return mix(base, variant, blend);
+}
 
 void main() {
   bool isPast = aSlice < 0.0;
@@ -48,16 +76,15 @@ void main() {
   float sinceSeed = dt + uTreeAge;
   float growth = smoothstep(0.0, 0.35, sinceSeed);
   vec3 p = uSphereRadius * uSubjectScale * uTreeScale * growth * vec3(sin(theta) * cos(phi), cos(theta), -sin(theta) * sin(phi));
-  p = spinY((uSpin + uSpinRate * dt) * uTreeSpin) * p;
+  float spinRate = uSpinRate * mix(1.0, uBranchSpinRate[b], branchBlend(dt));
+  p = spinY((uSpin + spinRate * dt) * uTreeSpin) * p;
 
-  // A parallel universe shares its tree's history until its split, which can only come after the seed.
+  // A parallel universe's split can only come after its tree's seed.
   float splitAgo = min(uUniverseSplit[u] * uPast, 0.8 * uTreeAge);
   float apart = u == 0 ? 1.0 : smoothstep(0.0, splitAgo, dt + splitAgo);
-  float theirTime = uMotionTime + dt + uUniversePhase[u];
-  vec3 ours = treeMotion(uMotionTime + dt);
-  vec3 theirs = treeMotion(theirTime) * uUniverseAmp[u];
-  vec3 velocity = mix(treeVelocity(uMotionTime + dt), treeVelocity(theirTime) * uUniverseAmp[u], apart);
-  p = contract(p, velocity) + mix(ours, theirs, apart);
+  vec3 center = branchPath(u, b, dt, splitAgo);
+  vec3 velocity = (branchPath(u, b, dt + 0.01, splitAgo) - branchPath(u, b, dt - 0.01, splitAgo)) / 0.02;
+  p = contract(p, velocity) + center;
 
   // Branches start together at the present and drift apart along W, drawn as the X direction.
   if (!isPast && b > 0) {
@@ -80,6 +107,7 @@ void main() {
   float likelihood = uBranchP[b] / uBranchP[0];
   float branchAlpha = b == 0 ? mix(1.0, likelihood, uBranching) : likelihood * uBranching;
   if (isPast || isPresent) branchAlpha = 1.0;
+  else if (uFocusBranch >= 0.0 && float(b) != uFocusBranch) branchAlpha *= uOthersAlpha;
 
   // Before its split a parallel universe is our own history, which our trail already draws.
   float universeAlpha = u == 0 ? 1.0 : uParallel * step(0.001, apart) * (float(u) < uUniverseCount ? 1.0 : 0.0);

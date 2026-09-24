@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { wrapAngle } from './angle';
-import { BRANCH_COLORS, layoutBranches, MAX_BRANCHES } from './branches';
+import { BRANCH_COLORS, BRANCH_MOTIONS, branchBlend, layoutBranches, MAX_BRANCHES } from './branches';
 import { CameraRig } from './cameraRig';
 import { cameraRulesFor, DIMENSIONS, SPECTATOR_NOTE, type DimensionId } from './dimensions';
 import { clampTreeCount, ORCHARD_COLUMNS, orchardSeed, TREES, type TreeSeed } from './forest';
@@ -15,7 +15,7 @@ import { createTreeUniforms, type TreeUniforms } from './objects/treeUniforms';
 import { createUniversePath } from './objects/universePath';
 import { createGuideLines, setSegments } from './objects/guideLines';
 import { createLabelRenderer, Label } from './labels';
-import { branchOffset, properTimeTicks, subjectOffset, treeMotion, treeVelocity } from './motion';
+import { branchMotion, branchOffset, properTimeTicks, subjectOffset, treeMotion, treeVelocity } from './motion';
 import {
   clockRate,
   effectiveConstants,
@@ -231,6 +231,7 @@ const settings: Settings = {
   branchCount: 4,
   branchSpread: 1.2,
   watchBranch: 0,
+  otherBranches: 'show',
   universeCount: 3,
   universeSpacing: 1.9,
   treeCount: 3,
@@ -415,22 +416,50 @@ function syncTimeline(): void {
 }
 
 // Orbit controls capture the pointer on press, so controls laid over a feed must keep their presses to themselves.
-for (const overlay of document.querySelectorAll<HTMLElement>('#branch-picker, #info-toggle')) {
+for (const overlay of document.querySelectorAll<HTMLElement>('#branch-picker, #focus-bar, #info-toggle')) {
   overlay.addEventListener('pointerdown', (event) => event.stopPropagation());
 }
 
 const branchHint = document.querySelector<HTMLElement>('#branch-hint')!;
 const inspectorBranch = document.querySelector<HTMLElement>('#insp-branch')!;
-const branchButtons = BRANCH_COLORS.map((color, b) => {
+function selectBranch(b: number): void {
+  settings.watchBranch = b;
+  syncBranchPicker();
+}
+
+// The moment feed's picker and the structure feed's focus bar drive the same branch, so they stay in sync.
+function makeBranchButtons(container: string, withProbability: boolean): HTMLButtonElement[] {
+  return BRANCH_COLORS.map((color, b) => {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.style.color = color;
+    button.dataset.withProbability = String(withProbability);
+    button.addEventListener('click', () => selectBranch(b));
+    document.querySelector(container)!.append(button);
+    return button;
+  });
+}
+
+const branchButtons = [...makeBranchButtons('#branch-buttons', true), ...makeBranchButtons('#focus-buttons', false)];
+
+const OTHER_MODES = ['show', 'dim', 'hide'] as const;
+const otherButtons = OTHER_MODES.map((mode) => {
   const button = document.createElement('button');
   button.type = 'button';
-  button.style.color = color;
+  button.textContent = mode;
   button.addEventListener('click', () => {
-    settings.watchBranch = b;
+    settings.otherBranches = mode;
     syncBranchPicker();
   });
-  document.querySelector('#branch-buttons')!.append(button);
+  document.querySelector('#others-buttons')!.append(button);
   return button;
+});
+
+// Branch names in the structure feed can be clicked to focus that branch.
+branchLabels.forEach((label, b) => {
+  label.element.classList.add('pickable');
+  label.element.addEventListener('pointerdown', (event) => event.stopPropagation());
+  label.element.addEventListener('click', () => selectBranch(b));
 });
 
 function branchName(b: number): string {
@@ -441,11 +470,17 @@ function branchName(b: number): string {
 function syncBranchPicker(): void {
   const { probabilities } = layoutBranches(settings.branchCount);
   if (settings.watchBranch >= settings.branchCount) settings.watchBranch = 0;
-  branchButtons.forEach((button, b) => {
+  branchButtons.forEach((button, i) => {
+    const b = i % BRANCH_COLORS.length;
     button.hidden = b >= settings.branchCount;
-    button.textContent = `${branchName(b)} ${Math.round(probabilities[b] * 100)}%`;
+    button.textContent =
+      button.dataset.withProbability === 'true' ? `${branchName(b)} ${Math.round(probabilities[b] * 100)}%` : branchName(b);
     button.setAttribute('aria-pressed', String(b === settings.watchBranch));
   });
+  otherButtons.forEach((button, i) => button.setAttribute('aria-pressed', String(OTHER_MODES[i] === settings.otherBranches)));
+  branchLabels.forEach((label, b) => label.element.classList.toggle('focused', b === settings.watchBranch && settings.otherBranches !== 'show'));
+  trailUniforms.uFocusBranch.value = settings.otherBranches === 'show' ? -1 : settings.watchBranch;
+  trailUniforms.uOthersAlpha.value = settings.otherBranches === 'dim' ? 0.15 : 0;
 }
 
 playButton.addEventListener('click', togglePlay);
@@ -536,7 +571,11 @@ function placeLabels(
 
   // 4D: our own world-tube, read along the time axis.
   subjectOffset(motionTime, at);
-  nowLabel.update(at.add(shift.set(radius + 0.7, 0, 0)), levelBand(l, 4, 6));
+  // From 5D the present is also the fork point every branch shares.
+  const forking = l > 4.5;
+  nowLabel.setText(forking ? 'NOW · branches split here' : 'NOW');
+  // The longer fork label sits on the left, where the branches leave room.
+  nowLabel.update(at.add(shift.set(forking ? -(radius + 1.9) : radius + 0.7, 0, 0)), levelBand(l, 4, 6));
   subjectOffset(motionTime + pastDt, at);
   pastLabel.update(at.add(shift.set(0, pastDt * ts - radius - 0.4, 0)), levelBand(l, 4, 6) * visibility);
   subjectOffset(motionTime + futureDt, at);
@@ -574,9 +613,12 @@ function placeLabels(
   branchLabels.forEach((label, b) => {
     const p = layout.probabilities[b];
     label.setText(`${String.fromCharCode(65 + b)} · ${Math.round(p * 100)}%`);
-    subjectOffset(motionTime + futureDt, at).add(branchOffset(b, layout.offsets[b], settings.branchSpread, futureDt, branching, shift));
+    branchMotion(TREES[0], BRANCH_MOTIONS[b], motionTime, futureDt, branching, at);
+    at.add(branchOffset(b, layout.offsets[b], settings.branchSpread, futureDt, branching, shift));
     at.y += futureDt * ts + radius + 0.35;
-    label.update(at, p > 0 ? levelBand(l, 5, 5) * visibility : 0);
+    const unfocused = settings.otherBranches !== 'show' && b !== settings.watchBranch;
+    const focusFade = unfocused ? (settings.otherBranches === 'dim' ? 0.35 : 0) : 1;
+    label.update(at, p > 0 ? levelBand(l, 5, 5) * visibility * focusFade : 0);
   });
 
   // 6D: each universe's name above its present, and where it split from our history.
@@ -724,7 +766,17 @@ function spriteWorld(camera: THREE.PerspectiveCamera, feedHeight: number): numbe
   return (settings.pointSize * 16 * Math.tan(THREE.MathUtils.degToRad(camera.fov / 2))) / Math.max(feedHeight, 1);
 }
 
+// How far the watched branch has moved from where the unbranched motion would be.
 const branchShift = new THREE.Vector3();
+const driftScratch = new THREE.Vector3();
+
+/** Where the watched branch of our universe is, dt seconds from now: its own motion plus its drift along W. */
+function watchedBranchPosition(now: number, dt: number, branching: number, target: THREE.Vector3): THREE.Vector3 {
+  const b = settings.watchBranch;
+  const layout = layoutBranches(settings.branchCount);
+  branchMotion(TREES[0], BRANCH_MOTIONS[b], now, dt, branching, target);
+  return target.add(branchOffset(b, layout.offsets[b], settings.branchSpread, dt, branching, driftScratch));
+}
 
 function drawFeed(rect: FeedRect, feedScene: THREE.Scene, camera: THREE.Camera, background: number): void {
   if (rect.width < 1 || rect.height < 1) return;
@@ -751,7 +803,7 @@ function placePlayhead(
 
   const { probabilities } = layoutBranches(settings.branchCount);
   const name = `${branchName(settings.watchBranch)} · ${Math.round(probabilities[settings.watchBranch] * 100)}%`;
-  inspectorBranch.textContent = inFuture ? name : `${name} (not split yet)`;
+  inspectorBranch.textContent = inFuture ? `${name} · ${BRANCH_MOTIONS[settings.watchBranch].behaviour}` : `${name} (not split yet)`;
   const hint = inFuture ? '' : 'branches split at now: move the playhead into the future to follow one';
   if (branchHint.textContent !== hint) branchHint.textContent = hint;
   playheadRing.scale.setScalar(SPHERE_RADIUS * subjectScale * 1.25);
@@ -770,12 +822,10 @@ function placePlayhead(
   if (scrubInput !== document.activeElement) scrubInput.value = String(settings.playhead);
 
   const position = subjectOffset(momentTime, at).add(branchShift);
-  // A branch's own drift adds to the sway, so its velocity is the slope of both together.
-  const layout = layoutBranches(settings.branchCount);
-  const b = settings.watchBranch;
-  const drift = (dt: number) => branchOffset(b, layout.offsets[b], settings.branchSpread, dt, branching, local);
-  const driftVelocity = drift(offset + 0.01).clone().sub(drift(Math.max(offset - 0.01, 0))).divideScalar(offset > 0.01 ? 0.02 : 0.01);
-  const speed = treeVelocity(TREES[0], momentTime, velocity).add(driftVelocity).length();
+  // The branch's own motion and its drift along W both count, so speed is the slope of the full watched path.
+  const now = momentTime - offset;
+  const ahead = watchedBranchPosition(now, offset + 0.01, branching, velocity);
+  const speed = ahead.sub(watchedBranchPosition(now, offset - 0.01, branching, local)).length() / 0.02;
   inspectorTime.textContent = moment;
   inspectorPos.textContent = `x ${position.x.toFixed(2)} · z ${position.z.toFixed(2)}`;
   inspectorSpeed.textContent = `${speed.toFixed(2)} units/s`;
@@ -937,11 +987,11 @@ renderer.setAnimationLoop((now) => {
   settings.playhead = clampPlayhead(settings.playhead, settings.pastSeconds, settings.futureSeconds);
   const split = !document.body.classList.contains('single');
   const momentTime = motionTime + settings.playhead * temporal;
-  const spinAtMoment = spinning ? wrapAngle(spin + settings.playhead * temporal * settings.spinSpeed) : spin;
-  // Branches share the past and split at the present, so the chosen branch only moves the watched future.
-  const layout = layoutBranches(settings.branchCount);
-  const b = settings.watchBranch;
-  branchOffset(b, layout.offsets[b], settings.branchSpread, settings.playhead * temporal, branching, branchShift);
+  // Branches share the past and split at the present, so the chosen branch only changes the watched future.
+  const watchedDt = settings.playhead * temporal;
+  const branchSpin = THREE.MathUtils.lerp(1, BRANCH_MOTIONS[settings.watchBranch].spin, branchBlend(watchedDt, branching));
+  const spinAtMoment = spinning ? wrapAngle(spin + watchedDt * settings.spinSpeed * branchSpin) : spin;
+  watchedBranchPosition(motionTime, watchedDt, branching, branchShift).sub(subjectOffset(momentTime, local));
   placePlayhead(momentTime, subjectScale, temporal, visibility, split, branching);
   if (split) updateMoment(dt, momentTime, spinAtMoment, branching);
 

@@ -1,7 +1,34 @@
 import * as THREE from 'three';
 import { describe, expect, it } from 'vitest';
 import { TREES } from './forest';
-import { branchOffset, properTimeTicks, subjectOffset, treeMotion, treeVelocity } from './motion';
+import { BRANCH_MOTIONS } from './branches';
+import { branchMotion, branchOffset, properTimeTicks, subjectOffset, treeMotion, treeVelocity } from './motion';
+
+describe('branchMotion', () => {
+  const now = 4.2;
+  const at = (b: number, dt: number) => branchMotion(TREES[0], BRANCH_MOTIONS[b], now, dt, 1, new THREE.Vector3());
+
+  it('shares the past and the present with the main motion', () => {
+    for (let b = 0; b < BRANCH_MOTIONS.length; b++) {
+      for (const dt of [-1, -0.2, 0]) expect(at(b, dt).distanceTo(treeMotion(TREES[0], now + dt, v))).toBeCloseTo(0);
+    }
+  });
+
+  it('leaves the present at the same speed, so nothing jumps at the split', () => {
+    const base = treeVelocity(TREES[0], now, new THREE.Vector3());
+    for (let b = 1; b < BRANCH_MOTIONS.length; b++) {
+      const speed = at(b, 0.001).sub(at(b, 0)).divideScalar(0.001);
+      expect(speed.distanceTo(base)).toBeLessThan(0.01);
+    }
+  });
+
+  it('keeps branch A on the main motion and moves every other branch its own way', () => {
+    expect(at(0, 1.2).distanceTo(treeMotion(TREES[0], now + 1.2, v))).toBeCloseTo(0);
+    for (let b = 1; b < BRANCH_MOTIONS.length; b++) {
+      expect(at(b, 1.2).distanceTo(treeMotion(TREES[0], now + 1.2, v))).toBeGreaterThan(0.02);
+    }
+  });
+});
 
 describe('treeVelocity', () => {
   it('matches the slope of the motion', () => {

@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { branchBlend, type BranchMotion } from './branches';
 import type { TreeSeed } from './forest';
 
 /** Mirrors subjectOffset in subject.glsl so labels can follow what the shader draws. */
@@ -48,6 +49,22 @@ export function properTimeTicks(
     }
   }
   return ticks.sort((a, b) => a - b);
+}
+
+/** Mirrors branchPath in trail.vert.glsl for our own universe: shared motion until now, then the branch's own. */
+export function branchMotion(
+  seed: Pick<TreeSeed, 'tempo' | 'phase' | 'sway'>,
+  motion: BranchMotion,
+  now: number,
+  dt: number,
+  branching: number,
+  target: THREE.Vector3,
+): THREE.Vector3 {
+  treeMotion(seed, now + dt, target);
+  const blend = branchBlend(dt, branching);
+  if (blend === 0) return target;
+  const variant = treeMotion(seed, now + dt * motion.tempo, new THREE.Vector3()).multiplyScalar(motion.sway);
+  return target.lerp(variant, blend);
 }
 
 /** Mirrors the branch drift and wobble in trail.vert.glsl. */

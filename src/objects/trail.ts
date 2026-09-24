@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { BRANCH_COLORS, layoutBranches, MAX_BRANCHES } from '../branches';
+import { BRANCH_COLORS, BRANCH_MOTIONS, layoutBranches, MAX_BRANCHES } from '../branches';
 import type { SliceInstances } from '../geometry/timeSlices';
 import type { PointCloudData } from '../geometry/uvSphere';
 import { GRAVITY_OURS, LIGHT_SPEED_OURS, UNCERTAINTY_OURS } from '../physics';
@@ -52,6 +52,11 @@ export function createTrailUniforms(pixelRatio: number): TrailUniforms {
     uBranchW: { value: layout.offsets },
     uBranchP: { value: layout.probabilities },
     uBranchColors: { value: rawColors(BRANCH_COLORS) },
+    uBranchTempo: { value: BRANCH_MOTIONS.map((m) => m.tempo) },
+    uBranchSway: { value: BRANCH_MOTIONS.map((m) => m.sway) },
+    uBranchSpinRate: { value: BRANCH_MOTIONS.map((m) => m.spin) },
+    uFocusBranch: { value: -1 },
+    uOthersAlpha: { value: 1 },
     uUniverseCount: { value: MAX_UNIVERSES },
     uUniverseSpacing: { value: 2.6 },
     uUniverseShift: { value: UNIVERSE_SHIFTS },
