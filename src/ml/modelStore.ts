@@ -47,7 +47,9 @@ export function restoreLearning(text: string, model: MotionModel, checks: Scorek
   if (typeof saved.checks !== 'object' || saved.checks === null) return false;
 
   const backup = { model: model.save(), checks: Object.fromEntries(Object.entries(checks).map(([k, c]) => [k, c.save()])) };
-  const ok = model.load(saved.model) && Object.entries(checks).every(([k, c]) => c.load(saved.checks![k]));
+  // A scorekeeper missing from an older save simply starts fresh; one that is present must be valid.
+  const ok =
+    model.load(saved.model) && Object.entries(checks).every(([k, c]) => saved.checks![k] === undefined || c.load(saved.checks![k]));
   if (!ok) {
     model.load(backup.model);
     for (const [k, c] of Object.entries(checks)) c.load(backup.checks[k]);

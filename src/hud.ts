@@ -54,9 +54,8 @@ export interface Stats {
   /** Average distance between past predictions and where the subject really was. */
   errorHalf: number;
   errorOne: number;
-  /** Over recent one-second predictions: confidence claimed, and how often they actually came true. */
-  claimed: number;
-  cameTrue: number;
+  /** For each graded look-ahead: the confidence claimed, and how often it actually came true. */
+  calibration: string;
   /** Whether the model started fresh or resumed what it learned before the page was reloaded. */
   memory: string;
 }
@@ -132,8 +131,7 @@ export function createHud(settings: Settings, stats: Stats, callbacks: HudCallba
   learning.addBinding(stats, 'errorHalf', { label: 'avg miss +0.5 s', readonly: true, format: asUnits });
   learning.addBinding(stats, 'errorOne', { label: 'avg miss +1 s', readonly: true, format: asUnits });
   learning.addBinding(stats, 'errorOne', { label: 'miss +1 s over time', readonly: true, view: 'graph', min: 0, max: 1.5 });
-  learning.addBinding(stats, 'claimed', { label: 'claimed', readonly: true, format: asPercent });
-  learning.addBinding(stats, 'cameTrue', { label: 'came true', readonly: true, format: asPercent });
+  learning.addBinding(stats, 'calibration', { label: 'claimed → true', readonly: true, multiline: true, rows: 5 });
   learning.addBinding(settings, 'showLastCheck', { label: 'show last check' });
   learning.addButton({ title: 'Export model…' }).on('click', callbacks.onExportModel);
   learning.addButton({ title: 'Import model…' }).on('click', callbacks.onImportModel);

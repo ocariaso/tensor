@@ -69,7 +69,7 @@ describe('MotionTrack', () => {
     history.reset(new THREE.Vector3(0, 0, 0), 3);
     history.push(new THREE.Vector3(1, 0, 0));
     const track = new MotionTrack(4, 2, 1);
-    const f = { x: new Float32Array([2, 3]), z: new Float32Array([0, 0]), spread: new Float32Array([0.1, 0.2]), confidence: new Float32Array([0.9, 0.7]) };
+    const f = { x: new Float32Array([2, 3]), z: new Float32Array([0, 0]), spread: new Float32Array([0.1, 0.2]), confidence: new Float32Array([0.9, 0.7]), deviation: new Float32Array(0) };
     track.update(history, f);
     expect(track.presentTime).toBeCloseTo(4);
     expect(track.sample(4, new THREE.Vector3()).x).toBeCloseTo(1);

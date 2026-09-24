@@ -29,7 +29,8 @@ import { MotionHistory, RandomWalk } from './randomWalk';
 import { createHistoryUniforms, syncHistoryUniforms } from './objects/historyUniforms';
 import { CONFIDENCE_RADIUS, forecast, MotionLearner, VELOCITY_WINDOW } from './ml/forecast';
 import { LinearMotionModel } from './ml/motionModel';
-import { PredictionCheck, type CheckResult } from './ml/predictionCheck';
+import type { CheckResult } from './ml/predictionCheck';
+import { HorizonCalibration } from './ml/horizonCalibration';
 import {
   exportFileName,
   forgetLearning,
@@ -113,8 +114,9 @@ history.reset(walk.position, 0);
 const track = new MotionTrack(HISTORY_SAMPLES, FUTURE_SAMPLES, HISTORY_INTERVAL);
 track.update(history, null);
 const learner = new MotionLearner(new LinearMotionModel(), HISTORY_INTERVAL);
-const check = new PredictionCheck(CHECK_HORIZON, CONFIDENCE_RADIUS);
-const halfCheck = new PredictionCheck(CHECK_HORIZON / 2, CONFIDENCE_RADIUS);
+// Predictions are graded at several look-ahead times, each keeping its own confidence honest.
+const calibration = new HorizonCalibration();
+const check = calibration.check('one');
 let ghost: CheckResult | null = null;
 
 // What the model learned is kept in the browser, so a reload resumes instead of starting over.
@@ -122,7 +124,7 @@ const SAVE_EVERY_MS = 5000;
 // A few seconds of lessons are not worth resuming, so a reset followed by a quick reload still starts fresh.
 const MIN_LESSONS_TO_SAVE = 300;
 const learningStore = browserStore();
-const scorekeepers = { one: check, half: halfCheck };
+const scorekeepers = calibration.checks;
 const resumed = learningStore !== null && loadLearning(learningStore, learner.model, scorekeepers);
 let lastSaved = performance.now();
 
@@ -378,8 +380,7 @@ const stats: Stats = {
   confidenceOne: 0,
   errorHalf: 0,
   errorOne: 0,
-  claimed: 0,
-  cameTrue: 0,
+  calibration: calibration.summary(),
   memory: 'fresh start',
 };
 if (resumed) stats.memory = `resumed · ${learner.model.lessons.toLocaleString()} lessons`;
@@ -532,8 +533,7 @@ function resetModel(): void {
   if (learningStore) forgetLearning(learningStore);
   stats.memory = 'fresh start';
   learner.reset();
-  check.reset();
-  halfCheck.reset();
+  calibration.reset();
   ghost = null;
 }
 
@@ -1129,24 +1129,22 @@ function updatePrediction(): void {
     const p = history.sample(now - (VELOCITY_WINDOW - 1 - i) * HISTORY_INTERVAL, beforeScratch);
     return { x: p.x, z: p.z };
   });
-  const f = forecast(learner.model, recent, FUTURE_SAMPLES, HISTORY_INTERVAL, check.noiseScale);
+  // Each step's confidence is corrected by the grading of predictions made that far ahead.
+  const f = calibration.calibrate(forecast(learner.model, recent, FUTURE_SAMPLES, HISTORY_INTERVAL), HISTORY_INTERVAL);
   track.update(history, settings.showPrediction ? f : null);
+  calibration.record(now, f, HISTORY_INTERVAL);
+  ghost = calibration.settle(now, present.x, present.z) ?? ghost;
 
   const oneAhead = Math.round(CHECK_HORIZON / HISTORY_INTERVAL) - 1;
   const halfAhead = Math.round(CHECK_HORIZON / 2 / HISTORY_INTERVAL) - 1;
-  check.record(now, f.x[oneAhead], f.z[oneAhead], f.confidence[oneAhead]);
-  halfCheck.record(now, f.x[halfAhead], f.z[halfAhead], f.confidence[halfAhead]);
-  ghost = check.settle(now, present.x, present.z) ?? ghost;
-  halfCheck.settle(now, present.x, present.z);
 
   stats.lessons = learner.model.lessons;
   if (performance.now() - lastSaved > SAVE_EVERY_MS) saveProgress();
   stats.confidenceHalf = steady('half', f.confidence[halfAhead]);
   stats.confidenceOne = steady('one', f.confidence[oneAhead]);
-  stats.errorHalf = halfCheck.averageError;
+  stats.errorHalf = calibration.check('half').averageError;
   stats.errorOne = check.averageError;
-  stats.claimed = check.claimed;
-  stats.cameTrue = check.cameTrue;
+  stats.calibration = calibration.summary();
 }
 
 renderer.setAnimationLoop((now) => {

@@ -73,6 +73,22 @@ export interface Forecast {
   spread: Float32Array;
   /** Share of imagined futures that land within the confidence radius of the most likely path. */
   confidence: Float32Array;
+  /** How far each imagined future strays from the most likely path at each step, sample by sample. */
+  deviation: Float32Array;
+}
+
+/**
+ * Spread and confidence at one step if the imagined randomness were scaled by a factor.
+ * For a linear model the imagined futures stray exactly in proportion to the randomness, so rescaling
+ * the recorded distances is the same as imagining them again; a nonlinear model would make this an approximation.
+ */
+export function rescaled(forecast: Forecast, step: number, scale: number): { spread: number; confidence: number } {
+  const steps = forecast.x.length;
+  let within = 0;
+  for (let n = 0; n < FORECAST_SAMPLES; n++) {
+    if (forecast.deviation[n * steps + step] * scale <= CONFIDENCE_RADIUS) within++;
+  }
+  return { spread: forecast.spread[step] * scale, confidence: within / FORECAST_SAMPLES };
 }
 
 // Enough imagined futures for smooth percentages, few enough to redo every frame.
@@ -119,6 +135,7 @@ export function forecast(
     z: new Float32Array(steps),
     spread: new Float32Array(steps),
     confidence: new Float32Array(steps),
+    deviation: new Float32Array(steps * FORECAST_SAMPLES),
   };
   rollOut(model, recent, steps, interval, null, (k, x, z) => {
     result.x[k] = x;
@@ -133,6 +150,7 @@ export function forecast(
   for (let n = 0; n < FORECAST_SAMPLES; n++) {
     rollOut(model, recent, steps, interval, push, (k, x, z) => {
       const d2 = (x - result.x[k]) ** 2 + (z - result.z[k]) ** 2;
+      result.deviation[n * steps + k] = Math.sqrt(d2);
       squared[k] += d2;
       if (d2 <= CONFIDENCE_RADIUS * CONFIDENCE_RADIUS) within[k]++;
     });
