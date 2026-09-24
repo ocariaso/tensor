@@ -9,6 +9,10 @@ export interface Settings {
   spinSpeed: number;
   /** Random motion is recorded as it happens; scripted motion follows the hand-written sway. */
   randomMotion: boolean;
+  /** Draws the learned prediction as the future while motion is random. */
+  showPrediction: boolean;
+  /** Shows the last graded prediction beside the real subject; grading runs either way. */
+  showLastCheck: boolean;
   timeFlows: boolean;
   playbackRate: number;
   /** Seconds from the present that the moment feed shows, negative for the past. */
@@ -42,11 +46,23 @@ export interface Settings {
 export interface Stats {
   fps: number;
   points: number;
+  /** How many recorded steps the model has learned from. */
+  lessons: number;
+  /** Chance the prediction half a second and one second ahead comes true, as the model claims it now. */
+  confidenceHalf: number;
+  confidenceOne: number;
+  /** Average distance between past predictions and where the subject really was. */
+  errorHalf: number;
+  errorOne: number;
+  /** Over recent one-second predictions: confidence claimed, and how often they actually came true. */
+  claimed: number;
+  cameTrue: number;
 }
 
 export interface HudCallbacks {
   onStateChange: () => void;
   onMotionChange: () => void;
+  onResetModel: () => void;
 }
 
 export function createHud(settings: Settings, stats: Stats, callbacks: HudCallbacks, container: HTMLElement): Pane {
@@ -95,6 +111,21 @@ export function createHud(settings: Settings, stats: Stats, callbacks: HudCallba
   time.addBinding(settings, 'futureSeconds', { label: 'future (s)', min: 0, max: 2, step: 0.1 });
   time.addBinding(settings, 'timeScale', { label: 'units / s', min: 0.2, max: 2, step: 0.05 });
   time.addBinding(settings, 'trailOpacity', { label: 'tube opacity', min: 0.02, max: 0.6, step: 0.01 });
+
+  const asPercent = (v: number) => `${Math.round(v * 100)}%`;
+  const asUnits = (v: number) => `${v.toFixed(2)} units`;
+  const learning = pane.addFolder({ title: '4D · Prediction (learned)' });
+  learning.addBinding(settings, 'showPrediction', { label: 'show prediction' }).on('change', callbacks.onStateChange);
+  learning.addBinding(stats, 'lessons', { label: 'lessons', readonly: true, format: (v: number) => v.toFixed(0) });
+  learning.addBinding(stats, 'confidenceHalf', { label: 'confident +0.5 s', readonly: true, format: asPercent });
+  learning.addBinding(stats, 'confidenceOne', { label: 'confident +1 s', readonly: true, format: asPercent });
+  learning.addBinding(stats, 'errorHalf', { label: 'avg miss +0.5 s', readonly: true, format: asUnits });
+  learning.addBinding(stats, 'errorOne', { label: 'avg miss +1 s', readonly: true, format: asUnits });
+  learning.addBinding(stats, 'errorOne', { label: 'miss +1 s over time', readonly: true, view: 'graph', min: 0, max: 1.5 });
+  learning.addBinding(stats, 'claimed', { label: 'claimed', readonly: true, format: asPercent });
+  learning.addBinding(stats, 'cameTrue', { label: 'came true', readonly: true, format: asPercent });
+  learning.addBinding(settings, 'showLastCheck', { label: 'show last check' });
+  learning.addButton({ title: 'Reset model' }).on('click', callbacks.onResetModel);
 
   const branches = pane.addFolder({ title: '5D · Branches (W)' });
   branches

@@ -69,7 +69,7 @@ export const DIMENSIONS: Record<DimensionId, DimensionSpec> = {
     id: '4d',
     tag: 'Four Dimensions',
     title: '4D · Spacetime',
-    body: 'Time becomes a direction you can see, pointing up. Past moments stack below into a solid world-tube and future moments rise above as ghosts. The motion here is a formula, so the future already exists, like in a block universe. Here the future is exact because the motion is scripted; with a live subject it would be a true estimate.',
+    body: 'Time becomes a direction you can see, pointing up. The sphere moves at random, and every past moment below is recorded as it happens. Above, a model that teaches itself from that recording predicts where the sphere is heading: the path widens and fades as it grows less sure, and "confident" is the chance the sphere really lands within half a unit of the prediction. Every prediction is checked once its moment arrives, which keeps that confidence honest; turn on "show last check" to see the latest one beside the sphere.',
     level: 4,
     inhabitant: FREE,
     inhabitantNote: 'Inhabitant view: like us, you only experience the present moment, so the world-tube is hidden. Switch to Spectator to see all of time at once.',

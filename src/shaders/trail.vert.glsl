@@ -82,6 +82,10 @@ void main() {
   // A parallel universe's split can only come after its tree's seed.
   float splitAgo = min(uUniverseSplit[u] * uPast, 0.8 * uTreeAge);
   float apart = u == 0 ? 1.0 : smoothstep(0.0, splitAgo, dt + splitAgo);
+  // A predicted moment could be anywhere within its uncertainty, so its sphere widens by that much and fades.
+  float spread = isPast ? 0.0 : subjectSpread(uMotionTime + dt);
+  float bodyRadius = uSphereRadius * uSubjectScale * uTreeScale;
+  p *= 1.0 + spread / max(bodyRadius, 1e-3);
   vec3 center = branchPath(u, b, dt, splitAgo);
   vec3 velocity = (branchPath(u, b, dt + 0.01, splitAgo) - branchPath(u, b, dt - 0.01, splitAgo)) / 0.02;
   p = contract(p, velocity) + center;
@@ -126,5 +130,6 @@ void main() {
 
   // A parallel universe's present is drawn from this sparse slice, so it needs extra gain to read as solid.
   float sliceGain = isPresent ? 5.0 : (isPast ? 1.0 : mix(0.6, 1.6, uBranching));
-  vAlpha = pow(1.0 - age, 1.5) * sliceGain * branchAlpha * universeAlpha * uTemporal * uVisibility * uTreePresence;
+  float certainty = 1.0 / (1.0 + 3.0 * spread);
+  vAlpha = certainty * certainty * pow(1.0 - age, 1.5) * sliceGain * branchAlpha * universeAlpha * uTemporal * uVisibility * uTreePresence;
 }

@@ -38,6 +38,17 @@ vec3 recordedOffset(float t) {
   return mix(a, b, f - i0);
 }
 
+// How uncertain the subject's position is at a time: zero for the recorded past, growing along a prediction.
+float subjectSpread(float t) {
+  if (uRandomMotion < 0.5) return 0.0;
+  float f = clamp((t - uHistoryStart) / uHistoryStep, 0.0, uHistorySize - 1.0);
+  float i0 = floor(f);
+  float i1 = min(i0 + 1.0, uHistorySize - 1.0);
+  float a = texture2D(uHistory, vec2((i0 + 0.5) / uHistorySize, 0.5)).w;
+  float b = texture2D(uHistory, vec2((i1 + 0.5) / uHistorySize, 0.5)).w;
+  return mix(a, b, f - i0);
+}
+
 vec3 subjectOffset(float t) {
   return uRandomMotion > 0.5 ? recordedOffset(t) : scriptedOffset(t);
 }

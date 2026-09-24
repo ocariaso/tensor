@@ -27,6 +27,10 @@ import {
 } from './motion';
 import { MotionHistory, RandomWalk } from './randomWalk';
 import { createHistoryUniforms, syncHistoryUniforms } from './objects/historyUniforms';
+import { CONFIDENCE_RADIUS, forecast, MotionLearner } from './ml/forecast';
+import { LinearMotionModel } from './ml/motionModel';
+import { PredictionCheck, type CheckResult } from './ml/predictionCheck';
+import { MotionTrack } from './motionTrack';
 import {
   clockRate,
   effectiveConstants,
@@ -37,7 +41,7 @@ import {
   type LawWorld,
 } from './physics';
 import { levelBand, Transition } from './transition';
-import { clampPlayhead, describeMoment, momentBadge, PLAYBACK_RATES } from './timeline';
+import { clampPlayhead, describeMoment, momentBadge, percent, PLAYBACK_RATES } from './timeline';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import {
   clampUniverseCount,
@@ -63,6 +67,10 @@ const SUBJECT_SCALE_4D = 0.45;
 // The recording covers a little more than the longest past the timeline offers.
 const HISTORY_INTERVAL = 1 / 60;
 const HISTORY_SAMPLES = 200;
+// The prediction reaches as far ahead as the longest future the timeline offers.
+const FUTURE_SAMPLES = 121;
+// Predictions are scored this far ahead, which also tunes how much uncertainty the model admits to.
+const CHECK_HORIZON = 1;
 
 const canvas = document.querySelector<HTMLCanvasElement>('#stage')!;
 const infoTag = document.querySelector<HTMLElement>('#info-tag')!;
@@ -92,7 +100,14 @@ const sliceData = createUvSphere(SLICE_LAT, SLICE_LON);
 const walk = new RandomWalk();
 const history = new MotionHistory(HISTORY_SAMPLES, HISTORY_INTERVAL);
 history.reset(walk.position, 0);
-const historyUniforms = createHistoryUniforms(history);
+// The track joins the recording to the model's forecast, and the learner teaches the model from each recorded step.
+const track = new MotionTrack(HISTORY_SAMPLES, FUTURE_SAMPLES, HISTORY_INTERVAL);
+track.update(history, null);
+const learner = new MotionLearner(new LinearMotionModel(), HISTORY_INTERVAL);
+const check = new PredictionCheck(CHECK_HORIZON, CONFIDENCE_RADIUS);
+const halfCheck = new PredictionCheck(CHECK_HORIZON / 2, CONFIDENCE_RADIUS);
+let ghost: CheckResult | null = null;
+const historyUniforms = createHistoryUniforms(track);
 const cloudUniforms = { ...createCloudUniforms(LAT_SEGMENTS, LON_SEGMENTS, pixelRatio), ...historyUniforms };
 const trailUniforms = { ...createTrailUniforms(pixelRatio), ...historyUniforms };
 const singularity = createSingularity(pixelRatio);
@@ -127,6 +142,21 @@ const playheadRing = new THREE.LineLoop(
 );
 playheadRing.frustumCulled = false;
 scene.add(playheadRing);
+
+// A wire outline where the model said, one second ago, the subject would be now; shown in both feeds.
+function makeGhost(): THREE.LineSegments<THREE.WireframeGeometry, THREE.LineBasicMaterial> {
+  const outline = new THREE.LineSegments(
+    new THREE.WireframeGeometry(new THREE.SphereGeometry(1, 12, 8)),
+    new THREE.LineBasicMaterial({ color: 0xffd27a, transparent: true, opacity: 0.45, depthWrite: false }),
+  );
+  outline.frustumCulled = false;
+  outline.visible = false;
+  return outline;
+}
+const structureGhost = makeGhost();
+const momentGhost = makeGhost();
+scene.add(structureGhost);
+momentScene.add(momentGhost);
 
 function addLabel(text: string, variant?: string): Label {
   const label = new Label(text, variant);
@@ -210,6 +240,8 @@ const SPHERE_RADIUS = 1.2;
 const nowLabel = addLabel('NOW', 'now');
 const pastLabel = addLabel('PAST', 'time');
 const futureLabel = addLabel('FUTURE', 'time');
+const midConfidenceLabel = addLabel('', 'time');
+const ghostLabel = addLabel('', 'path');
 const timeAxisLabel = addLabel('time ↑', 'axis');
 const axisFutureLabel = addLabel('future', 'axis');
 const axisNowLabel = addLabel('now', 'axis');
@@ -245,6 +277,8 @@ const settings: Settings = {
   spin: true,
   spinSpeed: 0.35,
   randomMotion: true,
+  showPrediction: true,
+  showLastCheck: false,
   timeFlows: true,
   playbackRate: 1,
   playhead: 0,
@@ -271,7 +305,17 @@ const settings: Settings = {
   amplitude: 0.6,
   waveNumber: 4,
 };
-const stats: Stats = { fps: 0, points: 0 };
+const stats: Stats = {
+  fps: 0,
+  points: 0,
+  lessons: 0,
+  confidenceHalf: 0,
+  confidenceOne: 0,
+  errorHalf: 0,
+  errorOne: 0,
+  claimed: 0,
+  cameTrue: 0,
+};
 
 // Deep links: ?dim=1d&view=inhabitant
 const params = new URLSearchParams(window.location.search);
@@ -395,13 +439,25 @@ function renderLegend(items: LegendItem[]): void {
 const pane = createHud(
   settings,
   stats,
-  { onStateChange: applyState, onMotionChange: applyMotionMode },
+  { onStateChange: applyState, onMotionChange: applyMotionMode, onResetModel: resetModel },
   document.querySelector<HTMLElement>('#controls')!,
 );
 
-// While the subject moves at random there is no known future, so none is drawn.
+// A random subject's future is only the model's prediction, so it is drawn only while that prediction is shown.
 function futureSpan(): number {
-  return settings.randomMotion ? 0 : settings.futureSeconds;
+  return settings.randomMotion && !settings.showPrediction ? 0 : settings.futureSeconds;
+}
+
+function futureKind(): string {
+  return settings.randomMotion ? 'predicted' : 'estimate';
+}
+
+// Forgets everything learned, so the model can be watched learning again from scratch.
+function resetModel(): void {
+  learner.reset();
+  check.reset();
+  halfCheck.reset();
+  ghost = null;
 }
 
 // Switching to random carries on from where the scripted sway is now, keeping the past already on screen.
@@ -411,10 +467,11 @@ function applyMotionMode(): void {
     history.fill(elapsed, scriptedOffset);
     scriptedOffset(elapsed, walk.position);
     treeVelocity(TREES[0], elapsed, walk.velocity);
-    useRecordedMotion(history);
+    learner.restart();
+    track.update(history, null);
+    useRecordedMotion(track);
   }
-  document.body.classList.toggle('no-future', settings.randomMotion);
-  syncHistoryUniforms(historyUniforms, history, settings.randomMotion);
+  syncHistoryUniforms(historyUniforms, track, settings.randomMotion);
   syncTimeline();
 }
 
@@ -428,6 +485,8 @@ const inspectorTime = document.querySelector<HTMLElement>('#insp-time')!;
 const inspectorPos = document.querySelector<HTMLElement>('#insp-pos')!;
 const inspectorSpeed = document.querySelector<HTMLElement>('#insp-speed')!;
 const inspectorClock = document.querySelector<HTMLElement>('#insp-clock')!;
+const inspectorConfidence = document.querySelector<HTMLElement>('#insp-confidence')!;
+const timelineFuture = document.querySelector<HTMLElement>('#tl-future')!;
 
 const rateButtons = PLAYBACK_RATES.map((rate) => {
   const button = document.createElement('button');
@@ -461,6 +520,9 @@ function syncTimeline(): void {
   scrubInput.value = String(settings.playhead);
   nowMark.style.left = `${(settings.pastSeconds / (settings.pastSeconds + futureSpan())) * 100}%`;
   liveButton.classList.toggle('active', Math.abs(settings.playhead) < 0.005);
+  document.body.classList.toggle('no-future', futureSpan() === 0);
+  const futureEdge = `future · ${futureKind()}`;
+  if (timelineFuture.textContent !== futureEdge) timelineFuture.textContent = futureEdge;
 }
 
 // Orbit controls capture the pointer on press, so controls laid over a feed must keep their presses to themselves.
@@ -617,17 +679,17 @@ function placeLabels(
   const pastDt = -settings.pastSeconds * temporal;
   const futureDt = futureSpan() * temporal;
 
-  // 4D: our own world-tube, read along the time axis.
-  subjectOffset(motionTime, at);
-  // From 5D the present is also the fork point every branch shares.
+  // 4D: our own world-tube, read along the time axis. Moments sit at fixed heights, so these labels stay put
+  // in a column beside the tube instead of chasing the moving subject.
   const forking = l > 4.5;
   nowLabel.setText(forking ? 'NOW · branches split here' : 'NOW');
-  // The longer fork label sits on the left, where the branches leave room.
-  nowLabel.update(at.add(shift.set(forking ? -(radius + 1.9) : radius + 0.7, 0, 0)), levelBand(l, 4, 6));
-  subjectOffset(motionTime + pastDt, at);
-  pastLabel.update(at.add(shift.set(0, pastDt * ts - radius - 0.4, 0)), levelBand(l, 4, 6) * visibility);
-  subjectOffset(motionTime + futureDt, at);
-  futureLabel.update(at.add(shift.set(0, futureDt * ts + radius + 0.4, 0)), levelBand(l, 4, 4) * visibility * (futureSpan() > 0 ? 1 : 0));
+  nowLabel.update(at.set(forking ? -LABEL_COLUMN - 1 : LABEL_COLUMN, 0, 0), levelBand(l, 4, 6));
+  pastLabel.update(at.set(0, pastDt * ts - radius - 0.4, 0), levelBand(l, 4, 6) * visibility);
+  const tipConfidence = steady('tip', track.confidenceAt(track.presentTime + futureSpan()));
+  futureLabel.setText(
+    settings.randomMotion ? `PREDICTED +${futureSpan().toFixed(1)} s · ${percent(tipConfidence)} confident` : 'FUTURE',
+  );
+  futureLabel.update(at.set(0, futureDt * ts + radius + 0.4, 0), levelBand(l, 4, 4) * visibility * (futureSpan() > 0 ? 1 : 0));
   // Time stays the vertical direction at every level, so its axis moves out to the scene's edge as the scene widens.
   const axisAlpha = levelBand(l, 4, 9) * visibility;
   const lawness = THREE.MathUtils.clamp(l - 8, 0, 1);
@@ -858,8 +920,11 @@ function placePlayhead(
   playheadRing.material.opacity = split ? temporal * visibility : 0;
   playheadRing.visible = playheadRing.material.opacity > 0.01;
 
-  const moment = describeMoment(settings.playhead);
-  const badgeText = momentBadge(settings.playhead);
+  // A prediction carries the model's confidence; the recorded past and the present are certain.
+  const predicting = settings.randomMotion && inFuture;
+  const confidence = steady('watched', track.confidenceAt(track.presentTime + offset));
+  const moment = describeMoment(settings.playhead, futureKind());
+  const badgeText = momentBadge(settings.playhead, futureKind()) + (predicting ? ` · ${percent(confidence)}` : '');
   const watching = `watching: ${moment}`;
   if (readout.textContent !== watching) readout.textContent = watching;
   if (badge.textContent !== badgeText) {
@@ -878,6 +943,11 @@ function placePlayhead(
   inspectorPos.textContent = `x ${position.x.toFixed(2)} · z ${position.z.toFixed(2)}`;
   inspectorSpeed.textContent = `${speed.toFixed(2)} units/s`;
   inspectorClock.textContent = `${clockRate(speed, LIGHT_SPEED_OURS, GRAVITY_OURS, Math.hypot(position.x, position.z)).toFixed(2)} s per s`;
+  inspectorConfidence.textContent = !settings.randomMotion
+    ? 'scripted, exact'
+    : predicting
+      ? `${percent(confidence)} to land within ${CONFIDENCE_RADIUS} units`
+      : 'certain (recorded)';
 }
 
 // The moment feed shows our subject exactly as it is at the watched instant, at full size as in 3D.
@@ -909,6 +979,43 @@ function updateMoment(dt: number, momentTime: number, spinAtMoment: number, bran
   momentControls.update(dt);
 }
 
+// The ghost and a mid-way confidence label make the learned prediction readable at a glance.
+function placePrediction(subjectScale: number, temporal: number, visibility: number): void {
+  const predicting = settings.randomMotion && futureSpan() > 0;
+  // Grading always runs to keep the confidence honest; the ghost is only drawn on request.
+  const shown = predicting && settings.showLastCheck && ghost !== null && check.checks > 0;
+  const radius = SPHERE_RADIUS * subjectScale;
+  const alpha = temporal * visibility;
+
+  structureGhost.visible = shown && alpha > 0.05;
+  if (ghost) structureGhost.position.set(ghost.ghostX, 0, ghost.ghostZ);
+  structureGhost.scale.setScalar(radius);
+  if (ghost) ghostLabel.setText(`predicted ${CHECK_HORIZON} s ago · missed by ${ghost.error.toFixed(2)}`);
+  ghostLabel.update(at.set(ghost?.ghostX ?? 0, -radius - 0.35, ghost?.ghostZ ?? 0), structureGhost.visible ? alpha : 0);
+
+  // In the moment feed the ghost only means something while watching the present.
+  momentGhost.visible = shown && Math.abs(settings.playhead) < 0.005 && temporal > 0.5;
+  if (ghost) momentGhost.position.set(ghost.ghostX, 0, ghost.ghostZ);
+  momentGhost.scale.setScalar(SPHERE_RADIUS);
+
+  const mid = Math.min(0.5, futureSpan() / 2);
+  at.set(LABEL_COLUMN, mid * temporal * settings.timeScale, 0);
+  midConfidenceLabel.setText(`+${mid.toFixed(1)} s · ${percent(steady('mid', track.confidenceAt(track.presentTime + mid)))}`);
+  midConfidenceLabel.update(at, predicting && mid > 0 ? alpha : 0);
+}
+
+// Labels beside the tube sit in a fixed column just outside where the subject wanders.
+const LABEL_COLUMN = 2.4;
+const steadyValues = new Map<string, number>();
+
+// Eases a shown number toward its latest value, so readouts drift instead of flickering every frame.
+function steady(key: string, value: number): number {
+  const previous = steadyValues.get(key) ?? value;
+  const eased = previous + (value - previous) * 0.06;
+  steadyValues.set(key, eased);
+  return eased;
+}
+
 const trackTarget = new THREE.Vector3();
 const trackDelta = new THREE.Vector3();
 
@@ -917,10 +1024,42 @@ let spin = 0;
 let last = performance.now();
 
 // A random subject starts at rest in the centre, so its recorded past begins as a straight, still tube.
-useRecordedMotion(settings.randomMotion ? history : null);
-document.body.classList.toggle('no-future', settings.randomMotion);
-syncHistoryUniforms(historyUniforms, history, settings.randomMotion);
+useRecordedMotion(settings.randomMotion ? track : null);
+syncHistoryUniforms(historyUniforms, track, settings.randomMotion);
 syncTimeline();
+
+const presentScratch = new THREE.Vector3();
+const beforeScratch = new THREE.Vector3();
+
+// Plays the learned motion forward from the newest recording, scores older predictions whose moment has come, and updates the readouts.
+function updatePrediction(): void {
+  const now = history.newestTime;
+  const present = history.sample(now, presentScratch);
+  const before = history.sample(now - HISTORY_INTERVAL, beforeScratch);
+  const state = {
+    x: present.x,
+    z: present.z,
+    vx: (present.x - before.x) / HISTORY_INTERVAL,
+    vz: (present.z - before.z) / HISTORY_INTERVAL,
+  };
+  const f = forecast(learner.model, state, FUTURE_SAMPLES, HISTORY_INTERVAL, check.noiseScale);
+  track.update(history, settings.showPrediction ? f : null);
+
+  const oneAhead = Math.round(CHECK_HORIZON / HISTORY_INTERVAL) - 1;
+  const halfAhead = Math.round(CHECK_HORIZON / 2 / HISTORY_INTERVAL) - 1;
+  check.record(now, f.x[oneAhead], f.z[oneAhead], f.confidence[oneAhead]);
+  halfCheck.record(now, f.x[halfAhead], f.z[halfAhead], f.confidence[halfAhead]);
+  ghost = check.settle(now, present.x, present.z) ?? ghost;
+  halfCheck.settle(now, present.x, present.z);
+
+  stats.lessons = learner.model.lessons;
+  stats.confidenceHalf = steady('half', f.confidence[halfAhead]);
+  stats.confidenceOne = steady('one', f.confidence[oneAhead]);
+  stats.errorHalf = halfCheck.averageError;
+  stats.errorOne = check.averageError;
+  stats.claimed = check.claimed;
+  stats.cameTrue = check.cameTrue;
+}
 
 renderer.setAnimationLoop((now) => {
   const dt = Math.min((now - last) / 1000, 0.1);
@@ -930,9 +1069,12 @@ renderer.setAnimationLoop((now) => {
   // The random walk steps through the same simulated seconds the clock advances, recording each position.
   if (settings.randomMotion) {
     walk.advance(worldDt, elapsed, (time) => {
-      if (time >= history.newestTime + HISTORY_INTERVAL - 1e-6) history.push(walk.position);
+      if (time < history.newestTime + HISTORY_INTERVAL - 1e-6) return;
+      history.push(walk.position);
+      learner.observe(walk.position.x, walk.position.z);
     });
-    syncHistoryUniforms(historyUniforms, history, true);
+    updatePrediction();
+    syncHistoryUniforms(historyUniforms, track, true);
   }
   elapsed += worldDt;
   const motionTime = elapsed;
@@ -1054,6 +1196,7 @@ renderer.setAnimationLoop((now) => {
   const spinAtMoment = spinning ? wrapAngle(spin + watchedDt * settings.spinSpeed * branchSpin) : spin;
   watchedBranchPosition(motionTime, watchedDt, branching, branchShift).sub(subjectOffset(momentTime, local));
   placePlayhead(momentTime, subjectScale, temporal, visibility, split, branching);
+  placePrediction(subjectScale, temporal, visibility);
   if (split) updateMoment(dt, momentTime, spinAtMoment, branching);
 
   rig.update(dt);

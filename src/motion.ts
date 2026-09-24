@@ -1,13 +1,17 @@
 import * as THREE from 'three';
 import { branchBlend, type BranchMotion } from './branches';
 import type { TreeSeed } from './forest';
-import type { MotionHistory } from './randomWalk';
 
-let recorded: MotionHistory | null = null;
+/** Anything that can say where the subject is at a given time, such as a recording. */
+export interface MotionSource {
+  sample(time: number, target: THREE.Vector3): THREE.Vector3;
+}
+
+let recorded: MotionSource | null = null;
 
 /** Switches the subject between its scripted path and a recorded random one, mirroring uRandomMotion in subject.glsl. */
-export function useRecordedMotion(history: MotionHistory | null): void {
-  recorded = history;
+export function useRecordedMotion(source: MotionSource | null): void {
+  recorded = source;
 }
 
 /** Mirrors subjectOffset in subject.glsl so labels can follow what the shader draws. */
