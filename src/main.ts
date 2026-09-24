@@ -26,7 +26,7 @@ const scene = new THREE.Scene();
 const rig = new CameraRig(canvas);
 
 const sphereData = createUvSphere(LAT_SEGMENTS, LON_SEGMENTS);
-const cloud = createPointCloud(sphereData, LON_SEGMENTS, pixelRatio);
+const cloud = createPointCloud(sphereData, LAT_SEGMENTS, LON_SEGMENTS, pixelRatio);
 const singularity = createSingularity(pixelRatio);
 scene.add(cloud, singularity);
 
@@ -36,6 +36,7 @@ const settings: Settings = {
   transitionSeconds: 1.6,
   pointSize: 4,
   opacity: 0.9,
+  density: 2,
   coreSize: 64,
   omega: 2,
   amplitude: 0.6,
@@ -105,7 +106,10 @@ renderer.setAnimationLoop((now) => {
   cloudUniforms.uAmplitude.value = settings.amplitude;
   cloudUniforms.uWaveNumber.value = settings.waveNumber;
   cloudUniforms.uPointSize.value = settings.pointSize;
+  // Sprites shrink with distance as fast as the view grows, so their world width depends only on screen height.
+  cloudUniforms.uSpriteWorld.value = (settings.pointSize * 16 * Math.tan(THREE.MathUtils.degToRad(rig.camera.fov / 2))) / window.innerHeight;
   cloudUniforms.uOpacity.value = settings.opacity;
+  cloudUniforms.uDensity.value = settings.density;
   // The singularity stands in for the cloud while everything sits on the origin.
   cloud.visible = l > 0.001;
 

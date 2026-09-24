@@ -1,6 +1,6 @@
-export type DimensionId = '0d' | '1d';
+export type DimensionId = '0d' | '1d' | '2d';
 export type ViewMode = 'inhabitant' | 'spectator';
-export type PanAxes = 'none' | 'x' | 'free';
+export type PanAxes = 'none' | 'x' | 'xy' | 'free';
 
 export interface CameraRules {
   rotate: boolean;
@@ -13,7 +13,7 @@ export interface DimensionSpec {
   tag: string;
   title: string;
   body: string;
-  /** Position on the build-up ladder, where 0 is the point and 1 is the line. */
+  /** Position on the build-up ladder, which equals the dimension count. */
   level: number;
   inhabitant: CameraRules;
   inhabitantNote: string;
@@ -35,10 +35,19 @@ export const DIMENSIONS: Record<DimensionId, DimensionSpec> = {
     id: '1d',
     tag: 'One Dimension',
     title: '1D · The Line',
-    body: 'The point stretches along X into a line with length but no width. A wave travels along it as brightness, f(x, t) = sin(ωt − kx), since there is no sideways direction to move in.',
+    body: 'The point stretches along X into a line with length but no width. Waves run outward from the center as brightness, f(x, t) = sin(ωt − k|x|), since there is no sideways direction to move in.',
     level: 1,
     inhabitant: { rotate: false, pan: 'x', zoom: false },
     inhabitantNote: 'Inhabitant view: you can only slide left and right along the line.',
+  },
+  '2d': {
+    id: '2d',
+    tag: 'Two Dimensions',
+    title: '2D · The Plane',
+    body: 'The line sweeps around its center into a flat disc with length and width but no depth. Waves now spread as rings, f(r, t) = sin(ωt − kr).',
+    level: 2,
+    inhabitant: { rotate: false, pan: 'xy', zoom: true },
+    inhabitantNote: 'Inhabitant view: you can slide and zoom across the plane, but never tilt out of it.',
   },
 };
 

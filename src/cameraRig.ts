@@ -51,7 +51,7 @@ export class CameraRig {
 
     this.controls.enabled = true;
     this.controls.update(dt);
-    if (this.rules.pan === 'x') this.constrainPanToX();
+    if (this.rules.pan === 'x' || this.rules.pan === 'xy') this.constrainPan(this.rules.pan);
   }
 
   resize(width: number, height: number): void {
@@ -59,11 +59,12 @@ export class CameraRig {
     this.camera.updateProjectionMatrix();
   }
 
-  private constrainPanToX(): void {
+  private constrainPan(axes: 'x' | 'xy'): void {
     const target = this.controls.target;
+    const y = axes === 'xy' ? THREE.MathUtils.clamp(target.y, -PAN_LIMIT, PAN_LIMIT) : HOME_TARGET.y;
     const offset = this.scratch.set(
       THREE.MathUtils.clamp(target.x, -PAN_LIMIT, PAN_LIMIT) - target.x,
-      HOME_TARGET.y - target.y,
+      y - target.y,
       HOME_TARGET.z - target.z,
     );
     target.add(offset);

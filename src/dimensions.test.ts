@@ -17,11 +17,16 @@ describe('camera rules', () => {
   it('lets a 1D Inhabitant only pan along X', () => {
     expect(cameraRulesFor('1d', 'inhabitant')).toEqual({ rotate: false, pan: 'x', zoom: false });
   });
+
+  it('lets a 2D Inhabitant pan and zoom but never tilt', () => {
+    expect(cameraRulesFor('2d', 'inhabitant')).toEqual({ rotate: false, pan: 'xy', zoom: true });
+  });
 });
 
 describe('dimension ladder', () => {
-  it('orders levels by dimension count', () => {
-    expect(DIMENSIONS['0d'].level).toBe(0);
-    expect(DIMENSIONS['1d'].level).toBe(1);
+  it('sets each level to its dimension count', () => {
+    for (const id of ALL) {
+      expect(DIMENSIONS[id].level).toBe(Number.parseInt(id, 10));
+    }
   });
 });
