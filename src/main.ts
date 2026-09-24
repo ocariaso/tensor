@@ -7,6 +7,7 @@ import { clampTreeCount, TREES } from './forest';
 import { createSliceInstances, createUniverseInstances } from './geometry/timeSlices';
 import { createUvSphere } from './geometry/uvSphere';
 import { createHud, type Settings, type Stats } from './hud';
+import { setupInfoPanel } from './infoPanel';
 import { createCloudUniforms, createPointCloud } from './objects/pointCloud';
 import { createSingularity } from './objects/singularity';
 import { createTrail, createTrailUniforms } from './objects/trail';
@@ -31,6 +32,10 @@ const infoTitle = document.querySelector<HTMLElement>('#info-title')!;
 const infoBody = document.querySelector<HTMLElement>('#info-body')!;
 const infoView = document.querySelector<HTMLElement>('#info-view')!;
 const infoLegend = document.querySelector<HTMLUListElement>('#info-legend')!;
+const toggleInfo = setupInfoPanel(
+  document.querySelector<HTMLElement>('#info')!,
+  document.querySelector<HTMLButtonElement>('#info-toggle')!,
+);
 
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
 const pixelRatio = Math.min(window.devicePixelRatio, 2);
@@ -183,6 +188,10 @@ const pane = createHud(settings, stats, { onStateChange: applyState });
 window.addEventListener('keydown', (event) => {
   if (event.target instanceof HTMLInputElement) return;
   const key = event.key.toLowerCase();
+  if (key === 'i') {
+    toggleInfo();
+    return;
+  }
   const dimension = `${key}d`;
   if (dimension in DIMENSIONS) settings.dimension = dimension as DimensionId;
   else if (key === 'v') settings.view = settings.view === 'spectator' ? 'inhabitant' : 'spectator';
