@@ -77,6 +77,7 @@ interface TreeView {
   seed: TreeSeed;
   nameLabel: Label;
   seedLabel: Label;
+  nowLabel: Label;
   row: number;
   /** 0 for the 7D row itself, -1 or +1 for the 8D orchard's side columns. */
   side: number;
@@ -94,6 +95,7 @@ function makeTree(seed: TreeSeed, row: number, side: number): TreeView {
   const view: TreeView = {
     seed,
     nameLabel: addLabel('', isOurs ? 'you' : ''),
+    nowLabel: addLabel('its own now', 'axis'),
     seedLabel: addLabel(isOurs ? 'our seed · far below this view' : `✦ seed · began ${seed.age.toFixed(1)} s ago`, 'seed'),
     row,
     side,
@@ -156,7 +158,8 @@ const pathLabel = addLabel('path between universes', 'path');
 const rhythmAxisLabel = addLabel('rhythm:  slower  ←  →  faster', 'axis');
 const birthAxisLabel = addLabel('different seeds  →', 'axis');
 const orchardGrid = createGuideLines(3 + TREES.length, 0x8a8fa8);
-scene.add(timeAxis, orchardGrid);
+const nowTicks = createGuideLines(TREES.length * 3, 0xffffff);
+scene.add(timeAxis, orchardGrid, nowTicks);
 
 const settings: Settings = {
   dimension: '0d',
@@ -358,11 +361,13 @@ function placeLabels(
     ],
     axisAlpha * 0.6,
   );
+  // Branches and parallel universes share one history's clock, but separate seeds share no clock at all.
+  timeAxisLabel.setText(l > 6.5 ? 'time ↑ · within each universe' : l > 4.5 ? 'time ↑ · shared by this history' : 'time ↑');
   timeAxisLabel.update(at.set(axisX, axisTop + 0.35, axisZ), axisAlpha);
   // Tick names sit just inside the axis so they stay on screen however wide the scene gets.
   axisFutureLabel.update(at.set(axisX + 0.7, axisTop - 0.2, axisZ), axisAlpha);
-  axisNowLabel.setText(l > 5.5 ? 'now · in every universe' : 'now');
-  axisNowLabel.update(at.set(axisX + (l > 5.5 ? 1.5 : 0.6), 0.25, axisZ), axisAlpha);
+  axisNowLabel.setText(l > 6.5 ? 'no shared now · each tree has its own' : 'now');
+  axisNowLabel.update(at.set(axisX + (l > 6.5 ? 2 : 0.6), 0.25, axisZ), axisAlpha);
   axisPastLabel.update(at.set(axisX + 0.6, axisBottom + 0.2, axisZ), axisAlpha);
 
   // 5D: each branch's name and probability at the tip of its future.
@@ -393,7 +398,9 @@ function placeLabels(
     label.update(at, u > 0 && u < universeCount ? levelBand(l, 6, 6) * visibility : 0);
   });
 
-  // 7D and 8D: every tree's name above it, and each seed where its tree began.
+  // 7D and 8D: every tree's name above it, its own "now" beside it, and each seed where its tree began.
+  const nowTickSegments: Array<[THREE.Vector3, THREE.Vector3]> = [];
+  const treeNowAlpha = levelBand(l, 7, 8) * visibility;
   forest.forEach((view) => {
     const isOurs = view.row === 0 && view.side === 0;
     const offset = view.tree.uTreeOffset.value as THREE.Vector3;
@@ -408,6 +415,13 @@ function placeLabels(
     const nameBand = view.side === 0 ? levelBand(l, 7, 8) : levelBand(l, 8, 8);
     view.nameLabel.update(at, (isOurs ? 1 : presence) * nameBand);
 
+    // Each tree's present gets its own tick, since no clock is shared between separate seeds.
+    const shownNow = (isOurs ? 1 : presence) * treeNowAlpha;
+    treeMotion(view.seed, motionTime, at).add(offset);
+    const edge = at.x - radius * view.seed.scale - 0.15;
+    if (shownNow > 0.01) nowTickSegments.push([new THREE.Vector3(edge - 0.5, 0, at.z), new THREE.Vector3(edge, 0, at.z)]);
+    view.nowLabel.update(at.set(edge - 0.9, 0, at.z), view.side === 0 ? levelBand(l, 7, 7) * shownNow : 0);
+
     if (view.side !== 0) {
       view.seedLabel.update(at, 0);
       return;
@@ -418,6 +432,7 @@ function placeLabels(
     const seedAlpha = view.row < treeCount ? levelBand(l, 7, 7) * (isOurs ? visibility : presence) : 0;
     view.seedLabel.update(at, seedAlpha);
   });
+  setSegments(nowTicks, nowTickSegments, treeNowAlpha * 0.8);
 
   // 8D: a floor grid with named axes, and the path's name.
   const orchardAlpha = levelBand(l, 8, 8) * visibility;
