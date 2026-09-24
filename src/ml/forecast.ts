@@ -9,6 +9,16 @@ export interface Point {
   z: number;
 }
 
+/** How far from the centre and how fast the forecast may place the subject. */
+export interface MotionLimits {
+  reach: number;
+  speed: number;
+}
+
+const UNLIMITED: MotionLimits = { reach: Infinity, speed: Infinity };
+// Room beyond anything observed, since the subject may yet go a little further or faster than it has so far.
+const LIMIT_MARGIN = 1.5;
+
 // Fixed weights of a least-squares line through the window, centred so they sum to zero.
 const SLOPE_WEIGHTS = (() => {
   const mid = (VELOCITY_WINDOW - 1) / 2;
@@ -37,6 +47,8 @@ export function stateFromWindow(points: readonly Point[], interval: number): Mot
  */
 export class MotionLearner {
   private recent: Point[] = [];
+  private furthest = 0;
+  private fastest = 0;
 
   constructor(
     readonly model: MotionModel,
@@ -45,11 +57,13 @@ export class MotionLearner {
 
   observe(x: number, z: number): void {
     this.recent.push({ x, z });
+    this.furthest = Math.max(this.furthest, Math.abs(x), Math.abs(z));
     if (this.recent.length > VELOCITY_WINDOW + 1) this.recent.shift();
     if (this.recent.length < VELOCITY_WINDOW + 1) return;
     const window = this.recent.slice(0, VELOCITY_WINDOW);
     const before = window[VELOCITY_WINDOW - 1];
     const after = this.recent[VELOCITY_WINDOW];
+    this.fastest = Math.max(this.fastest, Math.hypot(after.x - before.x, after.z - before.z) / this.interval);
     this.model.observe(stateFromWindow(window, this.interval), (after.x - before.x) / this.interval, (after.z - before.z) / this.interval);
   }
 
@@ -61,7 +75,17 @@ export class MotionLearner {
   /** Forgets everything, including what the model learned. */
   reset(): void {
     this.restart();
+    this.furthest = 0;
+    this.fastest = 0;
     this.model.reset();
+  }
+
+  /**
+   * A half-trained model can be slightly unstable, which compounds into absurd long forecasts,
+   * so forecasts stay within a margin of the furthest and fastest motion actually seen.
+   */
+  limits(): MotionLimits {
+    return { reach: this.furthest * LIMIT_MARGIN + 0.5, speed: this.fastest * LIMIT_MARGIN + 0.5 };
   }
 }
 
@@ -103,14 +127,20 @@ function rollOut(
   steps: number,
   interval: number,
   push: (() => { x: number; z: number }) | null,
+  limits: MotionLimits,
   visit: (k: number, x: number, z: number) => void,
 ): void {
+  const clampSpeed = (v: number) => Math.max(-limits.speed, Math.min(limits.speed, v));
+  const clampReach = (p: number) => Math.max(-limits.reach, Math.min(limits.reach, p));
   const window = recent.slice(-VELOCITY_WINDOW).map((p) => ({ ...p }));
   for (let k = 0; k < steps; k++) {
     const v = model.predictVelocity(stateFromWindow(window, interval));
     const kick = push ? push() : { x: 0, z: 0 };
     const last = window[window.length - 1];
-    const next = { x: last.x + (v.vx + kick.x) * interval, z: last.z + (v.vz + kick.z) * interval };
+    const next = {
+      x: clampReach(last.x + clampSpeed(v.vx + kick.x) * interval),
+      z: clampReach(last.z + clampSpeed(v.vz + kick.z) * interval),
+    };
     window.shift();
     window.push(next);
     visit(k, next.x, next.z);
@@ -128,6 +158,7 @@ export function forecast(
   steps: number,
   interval: number,
   noiseScale = 1,
+  limits: MotionLimits = UNLIMITED,
   seed = 1234,
 ): Forecast {
   const result: Forecast = {
@@ -137,7 +168,7 @@ export function forecast(
     confidence: new Float32Array(steps),
     deviation: new Float32Array(steps * FORECAST_SAMPLES),
   };
-  rollOut(model, recent, steps, interval, null, (k, x, z) => {
+  rollOut(model, recent, steps, interval, null, limits, (k, x, z) => {
     result.x[k] = x;
     result.z[k] = z;
   });
@@ -148,7 +179,7 @@ export function forecast(
   const squared = new Float32Array(steps);
   const within = new Float32Array(steps);
   for (let n = 0; n < FORECAST_SAMPLES; n++) {
-    rollOut(model, recent, steps, interval, push, (k, x, z) => {
+    rollOut(model, recent, steps, interval, push, limits, (k, x, z) => {
       const d2 = (x - result.x[k]) ** 2 + (z - result.z[k]) ** 2;
       result.deviation[n * steps + k] = Math.sqrt(d2);
       squared[k] += d2;

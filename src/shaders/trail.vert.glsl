@@ -130,6 +130,8 @@ void main() {
 
   // A parallel universe's present is drawn from this sparse slice, so it needs extra gain to read as solid.
   float sliceGain = isPresent ? 5.0 : (isPast ? 1.0 : mix(0.6, 1.6, uBranching));
+  // The past dims with age; the future instead dims with uncertainty, but never so far that it disappears.
   float certainty = 1.0 / (1.0 + 3.0 * spread);
-  vAlpha = certainty * certainty * pow(1.0 - age, 1.5) * sliceGain * branchAlpha * universeAlpha * uTemporal * uVisibility * uTreePresence;
+  float fade = isPast ? pow(1.0 - age, 1.5) : mix(0.3, 1.0, certainty * certainty);
+  vAlpha = fade * sliceGain * branchAlpha * universeAlpha * uTemporal * uVisibility * uTreePresence;
 }

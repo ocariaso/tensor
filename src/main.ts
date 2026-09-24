@@ -1130,7 +1130,10 @@ function updatePrediction(): void {
     return { x: p.x, z: p.z };
   });
   // Each step's confidence is corrected by the grading of predictions made that far ahead.
-  const f = calibration.calibrate(forecast(learner.model, recent, FUTURE_SAMPLES, HISTORY_INTERVAL), HISTORY_INTERVAL);
+  const f = calibration.calibrate(
+    forecast(learner.model, recent, FUTURE_SAMPLES, HISTORY_INTERVAL, 1, learner.limits()),
+    HISTORY_INTERVAL,
+  );
   track.update(history, settings.showPrediction ? f : null);
   calibration.record(now, f, HISTORY_INTERVAL);
   ghost = calibration.settle(now, present.x, present.z) ?? ghost;

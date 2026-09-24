@@ -103,3 +103,27 @@ describe('stateFromWindow', () => {
     expect(s.x).toBeCloseTo(0.1 * (VELOCITY_WINDOW - 1));
   });
 });
+
+describe('forecast limits', () => {
+  it('keeps long forecasts from a half-trained model within the motion actually seen', () => {
+    for (const seed of [1, 3, 5]) {
+      const learner = new MotionLearner(new LinearMotionModel(), INTERVAL);
+      const walk = new RandomWalk(mulberry32(seed));
+      const recent: { x: number; z: number }[] = [];
+      let next = INTERVAL;
+      let furthest = 0;
+      walk.advance(20, 0, (time) => {
+        if (time + 1e-9 < next) return;
+        next += INTERVAL;
+        learner.observe(walk.position.x, walk.position.z);
+        recent.push({ x: walk.position.x, z: walk.position.z });
+        if (recent.length > VELOCITY_WINDOW) recent.shift();
+        if (recent.length < VELOCITY_WINDOW || Math.round(time * 60) % 15) return;
+        const f = forecast(learner.model, recent, 301, INTERVAL, 1, learner.limits());
+        furthest = Math.max(furthest, Math.abs(f.x[300]), Math.abs(f.z[300]));
+      });
+      expect(furthest).toBeLessThanOrEqual(learner.limits().reach + 1e-6);
+      expect(furthest).toBeLessThan(5);
+    }
+  });
+});
