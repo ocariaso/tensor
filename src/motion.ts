@@ -17,6 +17,39 @@ export function treeMotion(seed: Pick<TreeSeed, 'tempo' | 'phase' | 'sway'>, t: 
   return subjectOffset(t * seed.tempo + seed.phase, target).multiplyScalar(seed.sway);
 }
 
+/** Mirrors treeVelocity in subject.glsl. */
+export function treeVelocity(seed: Pick<TreeSeed, 'tempo' | 'phase' | 'sway'>, t: number, target: THREE.Vector3): THREE.Vector3 {
+  const ahead = treeMotion(seed, t + 0.01, new THREE.Vector3());
+  return treeMotion(seed, t - 0.01, target).sub(ahead).multiplyScalar(-1 / 0.02);
+}
+
+/**
+ * Coordinate-time offsets where the subject's own clock reads each multiple of the tick interval,
+ * found by stepping through time and adding up its clock rate.
+ */
+export function properTimeTicks(
+  rateAt: (dt: number) => number,
+  past: number,
+  future: number,
+  interval: number,
+  step = 0.01,
+): number[] {
+  const ticks: number[] = [0];
+  for (const direction of [-1, 1]) {
+    const limit = direction < 0 ? past : future;
+    let clock = 0;
+    let next = interval;
+    for (let t = 0; t < limit; t += step) {
+      clock += rateAt(direction * (t + step / 2)) * step;
+      if (clock >= next) {
+        ticks.push(direction * (t + step));
+        next += interval;
+      }
+    }
+  }
+  return ticks.sort((a, b) => a - b);
+}
+
 /** Mirrors the branch drift and wobble in trail.vert.glsl. */
 export function branchOffset(
   branch: number,

@@ -15,7 +15,8 @@ import { createTreeUniforms, type TreeUniforms } from './objects/treeUniforms';
 import { createUniversePath } from './objects/universePath';
 import { createGuideLines, setSegments } from './objects/guideLines';
 import { createLabelRenderer, Label } from './labels';
-import { branchOffset, subjectOffset, treeMotion } from './motion';
+import { branchOffset, properTimeTicks, subjectOffset, treeMotion, treeVelocity } from './motion';
+import { clockRate, effectiveConstants, LAW_WORLDS, pinchTowardMass, type LawWorld } from './physics';
 import { levelBand, Transition } from './transition';
 import {
   clampUniverseCount,
@@ -75,6 +76,9 @@ function addLabel(text: string, variant?: string): Label {
 
 interface TreeView {
   seed: TreeSeed;
+  isOurs: boolean;
+  /** The 9D laws this tree obeys, or null for trees under our own laws. */
+  law: LawWorld | null;
   nameLabel: Label;
   seedLabel: Label;
   nowLabel: Label;
@@ -89,11 +93,18 @@ interface TreeView {
 }
 
 // Every tree reuses the shared uniforms and adds its own starting conditions on top.
-function makeTree(seed: TreeSeed, row: number, side: number): TreeView {
+function makeTree(seed: TreeSeed, row: number, side: number, law: LawWorld | null = null): TreeView {
   const tree = createTreeUniforms(seed);
-  const isOurs = row === 0 && side === 0;
+  const isOurs = row === 0 && side === 0 && !law;
+  // Law-worlds share our seed, so their tint is set here instead of by their starting conditions.
+  if (law) {
+    tree.uTreeTint.value.setStyle(law.tint, THREE.LinearSRGBColorSpace);
+    tree.uTreeTintAmount.value = 0.35;
+  }
   const view: TreeView = {
     seed,
+    isOurs,
+    law,
     nameLabel: addLabel('', isOurs ? 'you' : ''),
     nowLabel: addLabel('its own now', 'axis'),
     seedLabel: addLabel(isOurs ? 'our seed · far below this view' : `✦ seed · began ${seed.age.toFixed(1)} s ago`, 'seed'),
@@ -103,7 +114,7 @@ function makeTree(seed: TreeSeed, row: number, side: number): TreeView {
     cloud: createPointCloud(sphereData, { ...cloudUniforms, ...tree }),
     trail: createTrail(sliceData, createSliceInstances(PAST_SLICES, FUTURE_SLICES, MAX_BRANCHES), { ...trailUniforms, ...tree }),
     parallel:
-      side === 0
+      side === 0 && !law
         ? createTrail(
             sliceData,
             createUniverseInstances(PAST_SLICES, FUTURE_SLICES, MAX_UNIVERSES, MAX_BRANCHES),
@@ -113,13 +124,14 @@ function makeTree(seed: TreeSeed, row: number, side: number): TreeView {
   };
   scene.add(view.cloud, view.trail);
   if (view.parallel) scene.add(view.parallel);
-  if (!isOurs) view.nameLabel.setColor(seed.tint);
+  if (!isOurs) view.nameLabel.setColor(law ? law.tint : seed.tint);
   return view;
 }
 
 const forest: TreeView[] = [
   ...TREES.map((seed, row) => makeTree(seed, row, 0)),
   ...TREES.flatMap((seed, row) => ORCHARD_COLUMNS.map((column) => makeTree(orchardSeed(seed, column), row, column.side))),
+  ...LAW_WORLDS.map((law) => makeTree(TREES[0], 0, 0, law)),
 ];
 
 // The path snakes from our tree through neighbouring universes to the far corner of the orchard.
@@ -158,8 +170,13 @@ const pathLabel = addLabel('path between universes', 'path');
 const rhythmAxisLabel = addLabel('rhythm:  slower  ←  →  faster', 'axis');
 const birthAxisLabel = addLabel('different seeds  →', 'axis');
 const orchardGrid = createGuideLines(3 + TREES.length, 0x8a8fa8);
-const nowTicks = createGuideLines(TREES.length * 3, 0xffffff);
-scene.add(timeAxis, orchardGrid, nowTicks);
+const nowTicks = createGuideLines(TREES.length * 3 + LAW_WORLDS.length, 0xffffff);
+const CLOCK_INTERVAL = 0.5;
+const clockTicks = createGuideLines((LAW_WORLDS.length + 1) * 24, 0xffffff);
+const clockLabels = [null, ...LAW_WORLDS].map(() => addLabel('', 'seed'));
+const massLine = createGuideLines(1, 0xffd27a);
+const massLabel = addLabel('central mass', 'path');
+scene.add(timeAxis, orchardGrid, nowTicks, clockTicks, massLine);
 
 const settings: Settings = {
   dimension: '0d',
@@ -181,6 +198,7 @@ const settings: Settings = {
   treeSpacing: 5,
   orchardSpacing: 7,
   showPath: true,
+  lawSpacing: 8,
   pointSize: 4,
   opacity: 0.9,
   density: 2,
@@ -200,7 +218,7 @@ if (viewParam === 'spectator' || viewParam === 'inhabitant') settings.view = vie
 
 const level = new Transition(DIMENSIONS[settings.dimension].level, settings.transitionSeconds);
 const tubeVisibility = new Transition(settings.view === 'spectator' ? 1 : 0, 0.6);
-type Framing = 'home' | 'forest' | 'orchard';
+type Framing = 'home' | 'forest' | 'orchard' | 'laws';
 let framing: Framing = 'home';
 
 interface LegendItem {
@@ -222,6 +240,13 @@ function orchardView(): { position: THREE.Vector3; target: THREE.Vector3 } {
   return { position: new THREE.Vector3(2, 7 + depth * 0.5, 12 + settings.orchardSpacing), target };
 }
 
+// Frames the row of law-worlds, which runs from one slot left of ours to two slots right.
+function lawsView(): { position: THREE.Vector3; target: THREE.Vector3 } {
+  // Aimed right of the row's centre so the row clears the HUD on the right edge.
+  const centre = settings.lawSpacing * 0.5 + 3.5;
+  return { position: new THREE.Vector3(centre, 3.5, 8 + settings.lawSpacing * 2.3), target: new THREE.Vector3(centre, 0, 0) };
+}
+
 function applyState(): void {
   const spec = DIMENSIONS[settings.dimension];
   level.duration = settings.transitionSeconds;
@@ -232,12 +257,13 @@ function applyState(): void {
 
   // Only the Spectator sees the forest and orchard, so the camera pulls back for them and returns home otherwise.
   const spectating = settings.view === 'spectator';
-  const wanted: Framing = spectating && spec.id === '7d' ? 'forest' : spectating && spec.id === '8d' ? 'orchard' : 'home';
+  const framings: Partial<Record<DimensionId, Framing>> = { '7d': 'forest', '8d': 'orchard', '9d': 'laws' };
+  const wanted: Framing = spectating ? (framings[spec.id] ?? 'home') : 'home';
   if (wanted !== framing && rules.rotate) {
     if (wanted === 'home') {
       rig.glideHome();
     } else {
-      const { position, target } = wanted === 'forest' ? forestView() : orchardView();
+      const { position, target } = { forest: forestView, orchard: orchardView, laws: lawsView }[wanted]();
       rig.glideTo(position, target);
     }
   }
@@ -273,6 +299,12 @@ function applyState(): void {
       { color: '#8a8fa8', label: 'Left column: slower rhythm' },
       { color: '#8a8fa8', label: 'Right column: faster rhythm' },
       { color: '#ffd27a', label: 'Path between universes' },
+    ]);
+  } else if (spec.id === '9d') {
+    renderLegend([
+      { color: '#ffffff', label: 'Ours · our laws (every world starts exactly like ours)' },
+      ...LAW_WORLDS.map((w) => ({ color: w.tint, label: w.label })),
+      { color: '#ffffff', label: 'White ticks: every 0.5 s of the subject’s own clock' },
     ]);
   } else {
     renderLegend([]);
@@ -348,9 +380,14 @@ function placeLabels(
   subjectOffset(motionTime + futureDt, at);
   futureLabel.update(at.add(shift.set(0, futureDt * ts + radius + 0.4, 0)), levelBand(l, 4, 4) * visibility);
   // Time stays the vertical direction at every level, so its axis moves out to the scene's edge as the scene widens.
-  const axisAlpha = levelBand(l, 4, 8) * visibility;
-  const axisX = -(2.4 + 0.6 * branching + 0.6 * parallelness + (settings.orchardSpacing - 1.1) * orchardness);
-  const axisZ = (-settings.treeSpacing * (treeCount - 1) * THREE.MathUtils.clamp(l - 6, 0, 1)) / 2;
+  const axisAlpha = levelBand(l, 4, 9) * visibility;
+  const lawness = THREE.MathUtils.clamp(l - 8, 0, 1);
+  const axisX = THREE.MathUtils.lerp(
+    -(2.4 + 0.6 * branching + 0.6 * parallelness + (settings.orchardSpacing - 1.1) * orchardness),
+    -settings.lawSpacing - 2.4,
+    lawness,
+  );
+  const axisZ = (-settings.treeSpacing * (treeCount - 1) * THREE.MathUtils.clamp(l - 6, 0, 1) * (1 - lawness)) / 2;
   const axisTop = futureDt * ts + radius + 0.2;
   const axisBottom = pastDt * ts;
   setSegments(
@@ -400,19 +437,31 @@ function placeLabels(
 
   // 7D and 8D: every tree's name above it, its own "now" beside it, and each seed where its tree began.
   const nowTickSegments: Array<[THREE.Vector3, THREE.Vector3]> = [];
-  const treeNowAlpha = levelBand(l, 7, 8) * visibility;
+  const treeNowAlpha = levelBand(l, 7, 9) * visibility;
   forest.forEach((view) => {
-    const isOurs = view.row === 0 && view.side === 0;
+    const isOurs = view.isOurs;
     const offset = view.tree.uTreeOffset.value as THREE.Vector3;
     const presence = view.tree.uTreePresence.value as number;
     const shortName = view.seed.label.split(' · ')[0];
     const inOrchard = l > 7.5;
     view.nameLabel.setText(
-      isOurs ? '★ Ours · you are here' : view.side !== 0 || !inOrchard ? view.seed.label : `${shortName} · normal rhythm`,
+      view.law
+        ? view.law.label
+        : isOurs
+          ? '★ Ours · you are here'
+          : view.side !== 0 || !inOrchard
+            ? view.seed.label
+            : `${shortName} · normal rhythm`,
     );
     treeMotion(view.seed, motionTime, at).add(offset);
     at.y += futureDt * ts + radius * view.seed.scale + 0.55;
-    const nameBand = view.side === 0 ? levelBand(l, 7, 8) : levelBand(l, 8, 8);
+    const nameBand = view.law
+      ? levelBand(l, 9, 9)
+      : isOurs
+        ? levelBand(l, 7, 9)
+        : view.side === 0
+          ? levelBand(l, 7, 8)
+          : levelBand(l, 8, 8);
     view.nameLabel.update(at, (isOurs ? 1 : presence) * nameBand);
 
     // Each tree's present gets its own tick, since no clock is shared between separate seeds.
@@ -420,9 +469,9 @@ function placeLabels(
     treeMotion(view.seed, motionTime, at).add(offset);
     const edge = at.x - radius * view.seed.scale - 0.15;
     if (shownNow > 0.01) nowTickSegments.push([new THREE.Vector3(edge - 0.5, 0, at.z), new THREE.Vector3(edge, 0, at.z)]);
-    view.nowLabel.update(at.set(edge - 0.9, 0, at.z), view.side === 0 ? levelBand(l, 7, 7) * shownNow : 0);
+    view.nowLabel.update(at.set(edge - 0.9, 0, at.z), view.side === 0 && !view.law ? levelBand(l, 7, 7) * shownNow : 0);
 
-    if (view.side !== 0) {
+    if (view.side !== 0 || view.law) {
       view.seedLabel.update(at, 0);
       return;
     }
@@ -457,6 +506,57 @@ function placeLabels(
   pathLabel.update(at, settings.showPath ? orchardAlpha : 0);
 }
 
+const velocity = new THREE.Vector3();
+const local = new THREE.Vector3();
+
+// 9D: ticks along each time tube at every half second of the subject's own clock, so clocks that run slow show wider gaps.
+function placeClocks(l: number, motionTime: number, subjectScale: number, temporal: number, visibility: number): void {
+  const band = levelBand(l, 9, 9);
+  const radius = SPHERE_RADIUS * subjectScale;
+  const ts = settings.timeScale;
+  const segments: Array<[THREE.Vector3, THREE.Vector3]> = [];
+  const worlds = forest.filter((view) => view.isOurs || view.law);
+
+  worlds.forEach((view, i) => {
+    const presence = view.isOurs ? visibility : (view.tree.uTreePresence.value as number);
+    const alpha = band * presence;
+    const label = clockLabels[i];
+    if (alpha < 0.01) {
+      label.update(at, 0);
+      return;
+    }
+    const offset = view.tree.uTreeOffset.value as THREE.Vector3;
+    const lightSpeed = view.tree.uLightSpeed.value as number;
+    const gravity = view.tree.uGravity.value as number;
+    const rateAt = (dt: number): number => {
+      const speed = treeVelocity(view.seed, motionTime + dt, velocity).length();
+      treeMotion(view.seed, motionTime + dt, local);
+      return clockRate(speed, lightSpeed, gravity, Math.hypot(local.x, local.z));
+    };
+
+    for (const tick of properTimeTicks(rateAt, settings.pastSeconds * temporal, settings.futureSeconds * temporal, CLOCK_INTERVAL)) {
+      pinchTowardMass(treeMotion(view.seed, motionTime + tick, local), gravity).add(offset);
+      local.y = tick * ts;
+      const start = local.x + radius + 0.1;
+      segments.push([new THREE.Vector3(start, local.y, local.z), new THREE.Vector3(start + 0.4, local.y, local.z)]);
+    }
+
+    label.setText(`own clock: ${rateAt(0).toFixed(2)} s per s`);
+    pinchTowardMass(treeMotion(view.seed, motionTime, at), gravity).add(offset);
+    label.update(at.set(at.x + radius + 1.6, -0.35, at.z), alpha);
+  });
+  setSegments(clockTicks, segments, band * visibility * 0.85);
+
+  // The strong-gravity world's mass runs straight up through time at that world's centre.
+  const gravityWorld = worlds.find((view) => view.law && view.law.dials.gravityExp > 0);
+  const massAlpha = gravityWorld ? band * (gravityWorld.tree.uTreePresence.value as number) : 0;
+  const centre = gravityWorld ? (gravityWorld.tree.uTreeOffset.value as THREE.Vector3) : at.set(0, 0, 0);
+  const bottom = -settings.pastSeconds * temporal * ts;
+  const top = settings.futureSeconds * temporal * ts + radius;
+  setSegments(massLine, [[new THREE.Vector3(centre.x, bottom, centre.z), new THREE.Vector3(centre.x, top, centre.z)]], massAlpha * 0.7);
+  massLabel.update(local.set(centre.x, bottom - 0.4, centre.z), massAlpha);
+}
+
 let elapsed = 0;
 let spin = 0;
 let last = performance.now();
@@ -475,6 +575,7 @@ renderer.setAnimationLoop((now) => {
   const parallelness = THREE.MathUtils.clamp(l - 5, 0, 1);
   const forestness = THREE.MathUtils.clamp(l - 6, 0, 1);
   const orchardness = THREE.MathUtils.clamp(l - 7, 0, 1);
+  const lawness = THREE.MathUtils.clamp(l - 8, 0, 1);
   const subjectScale = THREE.MathUtils.lerp(1, SUBJECT_SCALE_4D, temporal);
   const spinning = settings.spin && l >= 3;
   // Spin only builds up on the finished sphere so leaving 3D unwinds at most half a turn.
@@ -526,14 +627,24 @@ renderer.setAnimationLoop((now) => {
   let points = singularity.visible ? 1 : 0;
 
   forest.forEach((view) => {
-    const isOurs = view.row === 0 && view.side === 0;
-    const inRange = view.row < treeCount;
-    // Other trees exist only from 7D, side columns only from 8D, and like everything beyond the present only for the Spectator.
-    const growth = view.side === 0 ? forestness : orchardness;
-    const presence = isOurs ? 1 : inRange ? growth * visibility : 0;
+    const isOurs = view.isOurs;
+    let presence: number;
+    if (view.law) {
+      // Law-worlds slide out from ours in 9D while their constants move from our values to theirs.
+      presence = lawness * visibility;
+      view.tree.uTreeOffset.value.set(view.law.slot * settings.lawSpacing * lawness, 0, 0);
+      const constants = effectiveConstants(view.law.dials, lawness);
+      view.tree.uLightSpeed.value = constants.lightSpeed;
+      view.tree.uUncertainty.value = constants.uncertainty;
+      view.tree.uGravity.value = constants.gravity;
+    } else {
+      // Other trees exist from 7D, side columns from 8D, and the orchard folds away as 9D's law-worlds take over.
+      const growth = view.side === 0 ? forestness : orchardness;
+      presence = isOurs ? 1 : view.row < treeCount ? growth * visibility * (1 - lawness) : 0;
+      // Side columns slide out from the 7D row, spreading its line of starting points into a plane.
+      view.tree.uTreeOffset.value.set(view.side * settings.orchardSpacing * orchardness, 0, -settings.treeSpacing * view.row);
+    }
     view.tree.uTreePresence.value = presence;
-    // Side columns slide out from the 7D row, spreading its line of starting points into a plane.
-    view.tree.uTreeOffset.value.set(view.side * settings.orchardSpacing * orchardness, 0, -settings.treeSpacing * view.row);
 
     // The singularity stands in for our cloud while everything sits on the origin.
     view.cloud.visible = presence > 0.001 && l > 0.001;
@@ -559,10 +670,11 @@ renderer.setAnimationLoop((now) => {
   pathPositions.needsUpdate = true;
   const pathUniforms = universePath.material.uniforms;
   pathUniforms.uTime.value = elapsed;
-  pathUniforms.uOpacity.value = settings.showPath ? orchardness * visibility : 0;
+  pathUniforms.uOpacity.value = settings.showPath ? orchardness * (1 - lawness) * visibility : 0;
   universePath.visible = pathUniforms.uOpacity.value > 0.001;
 
   placeLabels(l, motionTime, subjectScale, temporal, branching, parallelness, orchardness, visibility, treeCount);
+  placeClocks(l, motionTime, subjectScale, temporal, visibility);
 
   rig.update(dt);
   renderer.render(scene, rig.camera);

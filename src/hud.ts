@@ -21,6 +21,7 @@ export interface Settings {
   treeSpacing: number;
   orchardSpacing: number;
   showPath: boolean;
+  lawSpacing: number;
   pointSize: number;
   opacity: number;
   density: number;
@@ -56,6 +57,7 @@ export function createHud(settings: Settings, stats: Stats, callbacks: HudCallba
         '6D · Parallel': '6d',
         '7D · Forest of Seeds': '7d',
         '8D · Orchard': '8d',
+        '9D · Laws of Physics': '9d',
       },
     })
     .on('change', callbacks.onStateChange);
@@ -105,6 +107,9 @@ export function createHud(settings: Settings, stats: Stats, callbacks: HudCallba
   const orchard = pane.addFolder({ title: '8D · Orchard' });
   orchard.addBinding(settings, 'orchardSpacing', { label: 'column spacing', min: 4, max: 14, step: 0.1 });
   orchard.addBinding(settings, 'showPath', { label: 'path' });
+
+  const laws = pane.addFolder({ title: '9D · Laws of Physics' });
+  laws.addBinding(settings, 'lawSpacing', { label: 'world spacing', min: 5, max: 12, step: 0.1 });
 
   const look = pane.addFolder({ title: 'Appearance', expanded: false });
   look.addBinding(settings, 'coreSize', { label: '0D size (px)', min: 16, max: 160, step: 1 });

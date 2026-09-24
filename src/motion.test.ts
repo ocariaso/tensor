@@ -1,7 +1,27 @@
 import * as THREE from 'three';
 import { describe, expect, it } from 'vitest';
 import { TREES } from './forest';
-import { branchOffset, subjectOffset, treeMotion } from './motion';
+import { branchOffset, properTimeTicks, subjectOffset, treeMotion, treeVelocity } from './motion';
+
+describe('treeVelocity', () => {
+  it('matches the slope of the motion', () => {
+    const t = 3.2;
+    const slope = treeMotion(TREES[0], t + 1e-4, new THREE.Vector3()).sub(treeMotion(TREES[0], t, new THREE.Vector3())).divideScalar(1e-4);
+    expect(treeVelocity(TREES[0], t, new THREE.Vector3()).distanceTo(slope)).toBeLessThan(1e-3);
+  });
+});
+
+describe('properTimeTicks', () => {
+  it('spaces ticks evenly when the clock runs normally', () => {
+    const ticks = properTimeTicks(() => 1, 2, 1, 0.5);
+    expect(ticks.map((t) => Math.round(t * 100) / 100)).toEqual([-2, -1.5, -1, -0.5, 0, 0.5, 1]);
+  });
+
+  it('spreads ticks twice as far apart when the clock runs at half speed', () => {
+    const ticks = properTimeTicks(() => 0.5, 2, 2, 0.5);
+    expect(ticks.map((t) => Math.round(t * 100) / 100)).toEqual([-2, -1, 0, 1, 2]);
+  });
+});
 
 const v = new THREE.Vector3();
 const w = new THREE.Vector3();

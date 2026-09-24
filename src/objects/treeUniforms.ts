@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import type { TreeSeed } from '../forest';
+import { GRAVITY_OURS, LIGHT_SPEED_OURS, UNCERTAINTY_OURS } from '../physics';
 
 export type TreeUniforms = Record<string, THREE.IUniform>;
 
@@ -20,5 +21,9 @@ export function createTreeUniforms(seed: TreeSeed): TreeUniforms {
     uTreeTint: { value: new THREE.Color().setStyle(seed.tint, THREE.LinearSRGBColorSpace) },
     uTreeTintAmount: { value: isOurs ? 0 : 0.3 },
     uTreePresence: { value: isOurs ? 1 : 0 },
+    // Each tree carries its own laws of physics, which only 9D law-worlds change from ours.
+    uLightSpeed: { value: LIGHT_SPEED_OURS },
+    uUncertainty: { value: UNCERTAINTY_OURS },
+    uGravity: { value: GRAVITY_OURS },
   };
 }

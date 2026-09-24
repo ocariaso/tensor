@@ -1,4 +1,4 @@
-export type DimensionId = '0d' | '1d' | '2d' | '3d' | '4d' | '5d' | '6d' | '7d' | '8d';
+export type DimensionId = '0d' | '1d' | '2d' | '3d' | '4d' | '5d' | '6d' | '7d' | '8d' | '9d';
 export type ViewMode = 'inhabitant' | 'spectator';
 export type PanAxes = 'none' | 'x' | 'xy' | 'free';
 
@@ -102,6 +102,15 @@ export const DIMENSIONS: Record<DimensionId, DimensionSpec> = {
     level: 8,
     inhabitant: FREE,
     inhabitantNote: 'Inhabitant view: you live in one tree, in its present moment, so the orchard and its paths are invisible to you.',
+  },
+  '9d': {
+    id: '9d',
+    tag: 'Nine Dimensions · Speculative',
+    title: '9D · Different Laws of Physics',
+    body: 'Worlds that start exactly like ours but obey different laws. White ticks on each time tube mark every 0.5 s of the subject’s own clock. Slow light squashes the moving sphere and stretches its ticks while it moves fast, strong gravity stretches them near the mass, and a big quantum constant blurs positions but leaves time alone. Each world stands for a whole orchard under its laws, drawn as one representative tree. The gravity clock is illustrative.',
+    level: 9,
+    inhabitant: FREE,
+    inhabitantNote: 'Inhabitant view: you live under one fixed set of laws, in your own present moment, so the other law-worlds are invisible to you.',
   },
 };
 
