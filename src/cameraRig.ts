@@ -2,8 +2,8 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import type { CameraRules } from './dimensions';
 
-const SPECTATOR_HOME = new THREE.Vector3(0, 1.2, 5.5);
-const INHABITANT_HOME = new THREE.Vector3(0, 0, 5.5);
+const SPECTATOR_HOME = new THREE.Vector3(0, 1.2, 7);
+const INHABITANT_HOME = new THREE.Vector3(0, 0, 7);
 const HOME_TARGET = new THREE.Vector3(0, 0, 0);
 const PAN_LIMIT = 2;
 
@@ -16,11 +16,11 @@ export class CameraRig {
   private readonly glideTarget = new THREE.Vector3();
   private readonly scratch = new THREE.Vector3();
 
-  constructor(canvas: HTMLCanvasElement) {
+  constructor(surface: HTMLElement) {
     this.camera = new THREE.PerspectiveCamera(50, 1, 0.01, 200);
     this.camera.position.copy(SPECTATOR_HOME);
 
-    this.controls = new OrbitControls(this.camera, canvas);
+    this.controls = new OrbitControls(this.camera, surface);
     this.controls.target.copy(HOME_TARGET);
     this.controls.enableDamping = true;
     this.controls.minDistance = 0.5;

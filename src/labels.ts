@@ -28,9 +28,9 @@ export class Label {
   }
 }
 
-export function createLabelRenderer(): CSS2DRenderer {
+export function createLabelRenderer(container: HTMLElement): CSS2DRenderer {
   const renderer = new CSS2DRenderer();
   renderer.domElement.className = 'label-layer';
-  document.body.appendChild(renderer.domElement);
+  container.appendChild(renderer.domElement);
   return renderer;
 }

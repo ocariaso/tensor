@@ -16,8 +16,18 @@ import { createUniversePath } from './objects/universePath';
 import { createGuideLines, setSegments } from './objects/guideLines';
 import { createLabelRenderer, Label } from './labels';
 import { branchOffset, properTimeTicks, subjectOffset, treeMotion, treeVelocity } from './motion';
-import { clockRate, effectiveConstants, LAW_WORLDS, pinchTowardMass, type LawWorld } from './physics';
+import {
+  clockRate,
+  effectiveConstants,
+  GRAVITY_OURS,
+  LAW_WORLDS,
+  LIGHT_SPEED_OURS,
+  pinchTowardMass,
+  type LawWorld,
+} from './physics';
 import { levelBand, Transition } from './transition';
+import { clampPlayhead, describeMoment, momentBadge, PLAYBACK_RATES } from './timeline';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import {
   clampUniverseCount,
   MAX_UNIVERSES,
@@ -57,7 +67,10 @@ renderer.setPixelRatio(pixelRatio);
 renderer.setClearColor(0x05060d);
 
 const scene = new THREE.Scene();
-const rig = new CameraRig(canvas);
+const structureFeed = document.querySelector<HTMLElement>('#feed-structure')!;
+const momentFeed = document.querySelector<HTMLElement>('#feed-moment')!;
+const rig = new CameraRig(structureFeed);
+renderer.setScissorTest(true);
 
 const sphereData = createUvSphere(LAT_SEGMENTS, LON_SEGMENTS);
 const sliceData = createUvSphere(SLICE_LAT, SLICE_LON);
@@ -66,7 +79,31 @@ const trailUniforms = createTrailUniforms(pixelRatio);
 const singularity = createSingularity(pixelRatio);
 scene.add(singularity);
 
-const labelRenderer = createLabelRenderer();
+const labelRenderer = createLabelRenderer(structureFeed);
+
+// The moment feed is its own small scene: our subject at the playhead's instant, with a floor for reference.
+const momentScene = new THREE.Scene();
+const momentCamera = new THREE.PerspectiveCamera(50, 1, 0.01, 100);
+momentCamera.position.set(0, 1.6, 7.5);
+const momentControls = new OrbitControls(momentCamera, momentFeed);
+momentControls.enableDamping = true;
+momentControls.minDistance = 1.5;
+momentControls.maxDistance = 20;
+const momentUniforms = { ...createCloudUniforms(LAT_SEGMENTS, LON_SEGMENTS, pixelRatio), ...createTreeUniforms(TREES[0]) };
+const momentCloud = createPointCloud(sphereData, momentUniforms);
+const momentFloor = new THREE.GridHelper(8, 16, 0x3a3f66, 0x1c2040);
+momentFloor.position.y = -1.6;
+momentScene.add(momentCloud, momentFloor);
+
+// A ring on the structure feed's world-tube marks the instant the moment feed is showing.
+const playheadRing = new THREE.LineLoop(
+  new THREE.BufferGeometry().setFromPoints(
+    Array.from({ length: 64 }, (_, i) => new THREE.Vector3(Math.cos((i / 64) * Math.PI * 2), 0, Math.sin((i / 64) * Math.PI * 2))),
+  ),
+  new THREE.LineBasicMaterial({ color: 0x7dffa0, transparent: true, depthWrite: false }),
+);
+playheadRing.frustumCulled = false;
+scene.add(playheadRing);
 
 function addLabel(text: string, variant?: string): Label {
   const label = new Label(text, variant);
@@ -185,7 +222,8 @@ const settings: Settings = {
   spin: true,
   spinSpeed: 0.35,
   timeFlows: true,
-  scrub: 0,
+  playbackRate: 1,
+  playhead: 0,
   pastSeconds: 2.5,
   futureSeconds: 1.5,
   timeScale: 0.8,
@@ -249,6 +287,8 @@ function lawsView(): { position: THREE.Vector3; target: THREE.Vector3 } {
 
 function applyState(): void {
   const spec = DIMENSIONS[settings.dimension];
+  // Below 4D there is no time axis to scrub, so the structure feed takes the whole width.
+  document.body.classList.toggle('single', spec.level < 4);
   level.duration = settings.transitionSeconds;
   level.retarget(spec.level);
   tubeVisibility.retarget(settings.view === 'spectator' ? 1 : 0);
@@ -324,13 +364,73 @@ function renderLegend(items: LegendItem[]): void {
   );
 }
 
-const pane = createHud(settings, stats, { onStateChange: applyState });
+const pane = createHud(settings, stats, { onStateChange: applyState }, document.querySelector<HTMLElement>('#controls')!);
+
+const playButton = document.querySelector<HTMLButtonElement>('#tl-play')!;
+const scrubInput = document.querySelector<HTMLInputElement>('#tl-scrub')!;
+const nowMark = document.querySelector<HTMLElement>('#tl-now')!;
+const liveButton = document.querySelector<HTMLButtonElement>('#tl-live')!;
+const readout = document.querySelector<HTMLElement>('#tl-readout')!;
+const badge = document.querySelector<HTMLElement>('#moment-badge')!;
+const inspectorTime = document.querySelector<HTMLElement>('#insp-time')!;
+const inspectorPos = document.querySelector<HTMLElement>('#insp-pos')!;
+const inspectorSpeed = document.querySelector<HTMLElement>('#insp-speed')!;
+const inspectorClock = document.querySelector<HTMLElement>('#insp-clock')!;
+
+const rateButtons = PLAYBACK_RATES.map((rate) => {
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.textContent = `${rate}×`;
+  button.addEventListener('click', () => {
+    settings.playbackRate = rate;
+    syncTimeline();
+  });
+  document.querySelector('#tl-rates')!.append(button);
+  return { rate, button };
+});
+
+function setPlayhead(offset: number): void {
+  settings.playhead = clampPlayhead(offset, settings.pastSeconds, settings.futureSeconds);
+  syncTimeline();
+}
+
+function togglePlay(): void {
+  settings.timeFlows = !settings.timeFlows;
+  syncTimeline();
+}
+
+// Keeps the timeline's controls in step with the settings they drive.
+function syncTimeline(): void {
+  playButton.textContent = settings.timeFlows ? '❚❚' : '▶';
+  playButton.title = settings.timeFlows ? 'Pause (Space)' : 'Play (Space)';
+  for (const { rate, button } of rateButtons) button.classList.toggle('active', rate === settings.playbackRate);
+  scrubInput.min = String(-settings.pastSeconds);
+  scrubInput.max = String(settings.futureSeconds);
+  scrubInput.value = String(settings.playhead);
+  nowMark.style.left = `${(settings.pastSeconds / (settings.pastSeconds + settings.futureSeconds)) * 100}%`;
+  liveButton.classList.toggle('active', Math.abs(settings.playhead) < 0.005);
+}
+
+playButton.addEventListener('click', togglePlay);
+liveButton.addEventListener('click', () => setPlayhead(0));
+scrubInput.addEventListener('input', () => setPlayhead(Number(scrubInput.value)));
+syncTimeline();
 
 window.addEventListener('keydown', (event) => {
-  if (event.target instanceof HTMLInputElement) return;
+  if (event.target instanceof HTMLInputElement && event.target.type !== 'range') return;
   const key = event.key.toLowerCase();
   if (key === 'i') {
     toggleInfo();
+    return;
+  }
+  if (key === ' ') {
+    event.preventDefault();
+    togglePlay();
+    return;
+  }
+  if (key === 'arrowleft' || key === 'arrowright') {
+    event.preventDefault();
+    setPlayhead(settings.playhead + (key === 'arrowleft' ? -0.1 : 0.1));
     return;
   }
   const dimension = `${key}d`;
@@ -341,15 +441,40 @@ window.addEventListener('keydown', (event) => {
   applyState();
 });
 
-function resize(): void {
-  const width = window.innerWidth;
-  const height = window.innerHeight;
-  renderer.setSize(width, height, false);
-  labelRenderer.setSize(width, height);
-  rig.resize(width, height);
+interface FeedRect {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
 }
-window.addEventListener('resize', resize);
-resize();
+
+const structureRect: FeedRect = { x: 0, y: 0, width: 1, height: 1 };
+const momentRect: FeedRect = { x: 0, y: 0, width: 0, height: 0 };
+
+// Each feed's on-screen box becomes a viewport on the shared canvas, measured from its bottom edge as WebGL expects.
+function measure(feed: HTMLElement, rect: FeedRect): void {
+  const box = feed.getBoundingClientRect();
+  rect.x = box.left;
+  rect.y = window.innerHeight - box.bottom;
+  rect.width = box.width;
+  rect.height = box.height;
+}
+
+function layoutFeeds(): void {
+  renderer.setSize(window.innerWidth, window.innerHeight, false);
+  measure(structureFeed, structureRect);
+  measure(momentFeed, momentRect);
+  labelRenderer.setSize(structureRect.width, structureRect.height);
+  rig.resize(structureRect.width, Math.max(structureRect.height, 1));
+  momentCamera.aspect = momentRect.width / Math.max(momentRect.height, 1);
+  momentCamera.updateProjectionMatrix();
+}
+
+const feedObserver = new ResizeObserver(layoutFeeds);
+feedObserver.observe(structureFeed);
+feedObserver.observe(momentFeed);
+window.addEventListener('resize', layoutFeeds);
+layoutFeeds();
 applyState();
 
 const at = new THREE.Vector3();
@@ -557,6 +682,64 @@ function placeClocks(l: number, motionTime: number, subjectScale: number, tempor
   massLabel.update(local.set(centre.x, bottom - 0.4, centre.z), massAlpha);
 }
 
+// Sprites shrink with distance as fast as the view grows, so their world width depends only on the feed's height.
+function spriteWorld(camera: THREE.PerspectiveCamera, feedHeight: number): number {
+  return (settings.pointSize * 16 * Math.tan(THREE.MathUtils.degToRad(camera.fov / 2))) / Math.max(feedHeight, 1);
+}
+
+function drawFeed(rect: FeedRect, feedScene: THREE.Scene, camera: THREE.Camera, background: number): void {
+  if (rect.width < 1 || rect.height < 1) return;
+  renderer.setViewport(rect.x, rect.y, rect.width, rect.height);
+  renderer.setScissor(rect.x, rect.y, rect.width, rect.height);
+  renderer.setClearColor(background);
+  renderer.render(feedScene, camera);
+}
+
+// The ring sits on our world-tube at the watched instant, and the readouts describe that instant.
+function placePlayhead(momentTime: number, subjectScale: number, temporal: number, visibility: number, split: boolean): void {
+  const offset = settings.playhead * temporal;
+  subjectOffset(momentTime, playheadRing.position);
+  playheadRing.position.y = offset * settings.timeScale;
+  playheadRing.scale.setScalar(SPHERE_RADIUS * subjectScale * 1.25);
+  playheadRing.material.opacity = split ? temporal * visibility : 0;
+  playheadRing.visible = playheadRing.material.opacity > 0.01;
+
+  const moment = describeMoment(settings.playhead);
+  const badgeText = momentBadge(settings.playhead);
+  const watching = `watching: ${moment}`;
+  if (readout.textContent !== watching) readout.textContent = watching;
+  if (badge.textContent !== badgeText) {
+    badge.textContent = badgeText;
+    badge.classList.toggle('replay', settings.playhead < -0.005);
+    badge.classList.toggle('estimate', settings.playhead > 0.005);
+  }
+  if (scrubInput !== document.activeElement) scrubInput.value = String(settings.playhead);
+
+  const position = subjectOffset(momentTime, at);
+  const speed = treeVelocity(TREES[0], momentTime, velocity).length();
+  inspectorTime.textContent = moment;
+  inspectorPos.textContent = `x ${position.x.toFixed(2)} · z ${position.z.toFixed(2)}`;
+  inspectorSpeed.textContent = `${speed.toFixed(2)} units/s`;
+  inspectorClock.textContent = `${clockRate(speed, LIGHT_SPEED_OURS, GRAVITY_OURS, Math.hypot(position.x, position.z)).toFixed(2)} s per s`;
+}
+
+// The moment feed shows our subject exactly as it is at the watched instant, at full size as in 3D.
+function updateMoment(dt: number, momentTime: number, spinAtMoment: number): void {
+  momentUniforms.uLevel.value = 3;
+  momentUniforms.uSpin.value = spinAtMoment;
+  momentUniforms.uTime.value = elapsed + settings.playhead;
+  momentUniforms.uMotionTime.value = momentTime;
+  momentUniforms.uSubjectScale.value = 1;
+  momentUniforms.uOmega.value = settings.omega;
+  momentUniforms.uAmplitude.value = settings.amplitude;
+  momentUniforms.uWaveNumber.value = settings.waveNumber;
+  momentUniforms.uPointSize.value = settings.pointSize;
+  momentUniforms.uSpriteWorld.value = spriteWorld(momentCamera, momentRect.height);
+  momentUniforms.uOpacity.value = settings.opacity;
+  momentUniforms.uDensity.value = settings.density;
+  momentControls.update(dt);
+}
+
 let elapsed = 0;
 let spin = 0;
 let last = performance.now();
@@ -565,9 +748,9 @@ renderer.setAnimationLoop((now) => {
   const dt = Math.min((now - last) / 1000, 0.1);
   last = now;
   stats.fps += (1 / Math.max(dt, 1e-4) - stats.fps) * 0.05;
-  const worldDt = settings.timeFlows ? dt : 0;
+  const worldDt = settings.timeFlows ? dt * settings.playbackRate : 0;
   elapsed += worldDt;
-  const motionTime = elapsed + settings.scrub;
+  const motionTime = elapsed;
 
   const l = level.update(dt);
   const temporal = THREE.MathUtils.clamp(l - 3, 0, 1);
@@ -591,7 +774,7 @@ renderer.setAnimationLoop((now) => {
   cloudUniforms.uWaveNumber.value = settings.waveNumber;
   cloudUniforms.uPointSize.value = settings.pointSize;
   // Sprites shrink with distance as fast as the view grows, so their world width depends only on screen height.
-  cloudUniforms.uSpriteWorld.value = (settings.pointSize * 16 * Math.tan(THREE.MathUtils.degToRad(rig.camera.fov / 2))) / window.innerHeight;
+  cloudUniforms.uSpriteWorld.value = spriteWorld(rig.camera, structureRect.height);
   cloudUniforms.uOpacity.value = settings.opacity;
   cloudUniforms.uDensity.value = settings.density;
 
@@ -617,7 +800,7 @@ renderer.setAnimationLoop((now) => {
   trailUniforms.uFuture.value = settings.futureSeconds;
   trailUniforms.uTimeScale.value = settings.timeScale;
   trailUniforms.uSpin.value = spin;
-  trailUniforms.uSpinRate.value = spinning && settings.timeFlows ? settings.spinSpeed : 0;
+  trailUniforms.uSpinRate.value = spinning && settings.timeFlows ? settings.spinSpeed * settings.playbackRate : 0;
   trailUniforms.uOpacity.value = settings.trailOpacity;
 
   // Only the slices that can show are sent to the GPU, since hidden instances still cost vertex work.
@@ -676,7 +859,16 @@ renderer.setAnimationLoop((now) => {
   placeLabels(l, motionTime, subjectScale, temporal, branching, parallelness, orchardness, visibility, treeCount);
   placeClocks(l, motionTime, subjectScale, temporal, visibility);
 
+  // The watched instant sits a fixed offset from the present, so playing advances it like delayed video.
+  settings.playhead = clampPlayhead(settings.playhead, settings.pastSeconds, settings.futureSeconds);
+  const split = !document.body.classList.contains('single');
+  const momentTime = motionTime + settings.playhead * temporal;
+  const spinAtMoment = spinning ? wrapAngle(spin + settings.playhead * temporal * settings.spinSpeed) : spin;
+  placePlayhead(momentTime, subjectScale, temporal, visibility, split);
+  if (split) updateMoment(dt, momentTime, spinAtMoment);
+
   rig.update(dt);
-  renderer.render(scene, rig.camera);
+  drawFeed(structureRect, scene, rig.camera, 0x05060d);
   labelRenderer.render(scene, rig.camera);
+  if (split) drawFeed(momentRect, momentScene, momentCamera, 0x070913);
 });

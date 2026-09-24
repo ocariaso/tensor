@@ -8,7 +8,9 @@ export interface Settings {
   spin: boolean;
   spinSpeed: number;
   timeFlows: boolean;
-  scrub: number;
+  playbackRate: number;
+  /** Seconds from the present that the moment feed shows, negative for the past. */
+  playhead: number;
   pastSeconds: number;
   futureSeconds: number;
   timeScale: number;
@@ -40,8 +42,8 @@ export interface HudCallbacks {
   onStateChange: () => void;
 }
 
-export function createHud(settings: Settings, stats: Stats, callbacks: HudCallbacks): Pane {
-  const pane = new Pane({ title: 'TENSOR' });
+export function createHud(settings: Settings, stats: Stats, callbacks: HudCallbacks, container: HTMLElement): Pane {
+  const pane = new Pane({ title: 'Controls', container });
 
   const world = pane.addFolder({ title: 'World' });
   world
@@ -79,8 +81,6 @@ export function createHud(settings: Settings, stats: Stats, callbacks: HudCallba
   sphere.addBinding(settings, 'spinSpeed', { label: 'speed (rad/s)', min: 0, max: 3, step: 0.05 });
 
   const time = pane.addFolder({ title: '4D · Time (T)' });
-  time.addBinding(settings, 'timeFlows', { label: 'time flows' });
-  time.addBinding(settings, 'scrub', { label: 'T scrub (s)', min: -3, max: 3, step: 0.01 });
   time.addBinding(settings, 'pastSeconds', { label: 'past (s)', min: 0.5, max: 3, step: 0.1 });
   time.addBinding(settings, 'futureSeconds', { label: 'future (s)', min: 0, max: 2, step: 0.1 });
   time.addBinding(settings, 'timeScale', { label: 'units / s', min: 0.2, max: 2, step: 0.05 });

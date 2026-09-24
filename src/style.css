@@ -5,6 +5,7 @@
   --accent: #8b7bff;
   --panel: rgba(12, 14, 28, 0.72);
   --border: rgba(139, 123, 255, 0.25);
+  --chrome: #0b0d1a;
 }
 
 * {
@@ -30,8 +31,222 @@ body {
   touch-action: none;
 }
 
-.label-layer {
+/* The console lays its panels over one full-window canvas, and each feed is a transparent window onto it. */
+#console {
   position: fixed;
+  inset: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.5fr) 290px;
+  grid-template-rows: 40px minmax(0, 1fr) auto auto;
+  grid-template-areas:
+    'top top top'
+    'moment structure controls'
+    'timeline timeline controls'
+    'inspector inspector controls';
+}
+
+body.single #console {
+  grid-template-columns: 0 minmax(0, 1fr) 290px;
+}
+
+body.single #feed-moment,
+body.single #inspector,
+body.single #tl-track,
+body.single #tl-live,
+body.single #tl-readout {
+  display: none;
+}
+
+#topbar {
+  grid-area: top;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 0 16px;
+  background: var(--chrome);
+  border-bottom: 1px solid var(--border);
+}
+
+.brand {
+  font-weight: 700;
+  letter-spacing: 0.12em;
+}
+
+.subtitle {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+#keys {
+  margin-left: auto;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.feed {
+  position: relative;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  touch-action: none;
+}
+
+#feed-moment {
+  grid-area: moment;
+}
+
+#feed-structure {
+  grid-area: structure;
+}
+
+.feed-title {
+  position: absolute;
+  z-index: 2;
+  top: 8px;
+  left: 12px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  color: var(--text);
+  pointer-events: none;
+}
+
+.feed-title span {
+  margin-left: 6px;
+  font-weight: 400;
+  letter-spacing: 0;
+  color: var(--muted);
+}
+
+.badge {
+  position: absolute;
+  z-index: 2;
+  top: 8px;
+  right: 10px;
+  padding: 2px 8px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  border-radius: 4px;
+  pointer-events: none;
+  color: #05060d;
+  background: #7dffa0;
+}
+
+.badge.replay {
+  background: #c9b8ff;
+}
+
+.badge.estimate {
+  background: #ffd27a;
+}
+
+#controls {
+  grid-area: controls;
+  overflow-y: auto;
+  padding: 8px;
+  background: var(--chrome);
+  border-left: 1px solid var(--border);
+}
+
+#timeline {
+  grid-area: timeline;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 16px;
+  background: var(--chrome);
+  border-top: 1px solid var(--border);
+}
+
+#timeline button {
+  min-width: 34px;
+  height: 28px;
+  padding: 0 8px;
+  font: inherit;
+  font-size: 12px;
+  color: var(--text);
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+#timeline button:hover,
+#timeline button.active {
+  border-color: var(--accent);
+  background: rgba(139, 123, 255, 0.18);
+}
+
+#timeline button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+#tl-rates {
+  display: flex;
+  gap: 4px;
+}
+
+#tl-track {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.tl-edge {
+  font-size: 11px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.tl-rail {
+  position: relative;
+  flex: 1;
+  padding-bottom: 14px;
+}
+
+#tl-scrub {
+  width: 100%;
+  accent-color: var(--accent);
+}
+
+#tl-now {
+  position: absolute;
+  bottom: 0;
+  font-size: 10px;
+  color: var(--text);
+  transform: translateX(-50%);
+  pointer-events: none;
+}
+
+#tl-readout {
+  min-width: 190px;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+}
+
+#inspector {
+  grid-area: inspector;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 24px;
+  padding: 6px 16px 10px;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+  background: var(--chrome);
+}
+
+#inspector b {
+  font-weight: 600;
+  color: var(--muted);
+}
+
+.label-layer {
+  position: absolute;
   inset: 0;
   z-index: 1;
   pointer-events: none;
@@ -77,17 +292,12 @@ body {
   border-color: rgba(255, 210, 122, 0.45);
 }
 
-/* Keeps the HUD above the scene labels. */
-.tp-dfwv {
-  z-index: 3;
-}
-
 #info {
   z-index: 2;
-  position: fixed;
-  left: 16px;
-  bottom: 48px;
-  max-width: min(420px, calc(100vw - 32px));
+  position: absolute;
+  left: 12px;
+  bottom: 12px;
+  max-width: min(420px, calc(100% - 24px));
   padding: 14px 16px;
   background: var(--panel);
   border: 1px solid var(--border);
@@ -202,15 +412,6 @@ body {
 
 #info-view {
   color: var(--text) !important;
-}
-
-#keys {
-  z-index: 2;
-  position: fixed;
-  left: 16px;
-  bottom: 14px;
-  font-size: 12px;
-  color: var(--muted);
 }
 
 kbd {

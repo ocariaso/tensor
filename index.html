@@ -13,22 +13,62 @@
   </head>
   <body>
     <canvas id="stage"></canvas>
-    <aside id="info" aria-live="polite">
-      <button id="info-toggle" type="button" aria-controls="info-details" aria-expanded="true" title="Minimize (I)">
-        <span aria-hidden="true">−</span>
-        <span class="visually-hidden">Minimize info panel</span>
-      </button>
-      <div id="info-tag"></div>
-      <h1 id="info-title"></h1>
-      <div id="info-details">
-        <p id="info-body"></p>
-        <ul id="info-legend"></ul>
-        <p id="info-view"></p>
-      </div>
-    </aside>
-    <footer id="keys">
-      <kbd>0</kbd> 0D &nbsp; <kbd>1</kbd> 1D &nbsp; <kbd>2</kbd> 2D &nbsp; <kbd>3</kbd> 3D &nbsp; <kbd>4</kbd> 4D &nbsp; <kbd>5</kbd> 5D &nbsp; <kbd>6</kbd> 6D &nbsp; <kbd>7</kbd> 7D &nbsp; <kbd>8</kbd> 8D &nbsp; <kbd>9</kbd> 9D &nbsp; <kbd>V</kbd> toggle view &nbsp; <kbd>I</kbd> info panel
-    </footer>
+    <div id="console">
+      <header id="topbar">
+        <span class="brand">TENSOR</span>
+        <span class="subtitle">Observation Console</span>
+        <span id="keys">
+          <kbd>0</kbd>–<kbd>9</kbd> dimension &nbsp; <kbd>V</kbd> view &nbsp; <kbd>I</kbd> info &nbsp; <kbd>Space</kbd> play / pause
+          &nbsp; <kbd>←</kbd><kbd>→</kbd> step
+        </span>
+      </header>
+
+      <section id="feed-moment" class="feed" aria-label="Moment feed">
+        <div class="feed-title">MOMENT FEED <span>one instant</span></div>
+        <div id="moment-badge" class="badge">LIVE</div>
+      </section>
+
+      <section id="feed-structure" class="feed" aria-label="Structure feed">
+        <div class="feed-title">STRUCTURE FEED <span>the whole dimension at once</span></div>
+        <aside id="info" aria-live="polite">
+          <button id="info-toggle" type="button" aria-controls="info-details" aria-expanded="true" title="Minimize (I)">
+            <span aria-hidden="true">−</span>
+            <span class="visually-hidden">Minimize info panel</span>
+          </button>
+          <div id="info-tag"></div>
+          <h1 id="info-title"></h1>
+          <div id="info-details">
+            <p id="info-body"></p>
+            <ul id="info-legend"></ul>
+            <p id="info-view"></p>
+          </div>
+        </aside>
+      </section>
+
+      <aside id="controls" aria-label="Controls"></aside>
+
+      <footer id="timeline" aria-label="Timeline">
+        <button id="tl-play" type="button" title="Play / pause (Space)">❚❚</button>
+        <div id="tl-rates" role="group" aria-label="Playback speed"></div>
+        <div id="tl-track">
+          <span class="tl-edge">past</span>
+          <div class="tl-rail">
+            <input id="tl-scrub" type="range" step="0.01" aria-label="Playhead" />
+            <span id="tl-now" aria-hidden="true">now</span>
+          </div>
+          <span class="tl-edge">future · estimate</span>
+        </div>
+        <button id="tl-live" type="button" title="Jump to the present">LIVE</button>
+        <span id="tl-readout"></span>
+      </footer>
+
+      <footer id="inspector" aria-label="Inspector">
+        <span><b>moment</b> <span id="insp-time"></span></span>
+        <span><b>position</b> <span id="insp-pos"></span></span>
+        <span><b>speed</b> <span id="insp-speed"></span></span>
+        <span><b>own clock</b> <span id="insp-clock"></span></span>
+      </footer>
+    </div>
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>
