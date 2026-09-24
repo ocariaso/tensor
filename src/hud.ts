@@ -26,7 +26,7 @@ export interface HudCallbacks {
 }
 
 export function createHud(settings: Settings, stats: Stats, callbacks: HudCallbacks): Pane {
-  const pane = new Pane({ title: 'OmniSpec' });
+  const pane = new Pane({ title: 'TENSOR' });
 
   const world = pane.addFolder({ title: 'World' });
   world
