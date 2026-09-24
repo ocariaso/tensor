@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { clampPlayhead, describeMoment, momentBadge } from './timeline';
+import { clampPlayhead, describeMoment, momentBadge, percent } from './timeline';
 
 describe('clampPlayhead', () => {
   it('keeps the playhead within the drawn past and future', () => {
@@ -25,5 +25,18 @@ describe('momentBadge', () => {
     expect(momentBadge(0)).toBe('LIVE');
     expect(momentBadge(-0.5)).toBe('REPLAY −0.50 s');
     expect(momentBadge(1)).toBe('ESTIMATE +1.00 s');
+  });
+
+  it('can name the future as a prediction', () => {
+    expect(momentBadge(0.5, 'predicted')).toBe('PREDICTED +0.50 s');
+    expect(describeMoment(0.5, 'predicted')).toBe('+0.50 s · future (predicted)');
+  });
+});
+
+describe('percent', () => {
+  it('rounds a chance to a whole percentage within 0 to 100', () => {
+    expect(percent(0.678)).toBe('68%');
+    expect(percent(1.2)).toBe('100%');
+    expect(percent(-0.1)).toBe('0%');
   });
 });

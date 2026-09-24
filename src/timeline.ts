@@ -6,14 +6,19 @@ export function clampPlayhead(offset: number, past: number, future: number): num
 }
 
 /** Describes where the playhead sits relative to the present, marking the future as an estimate. */
-export function describeMoment(offset: number): string {
+export function describeMoment(offset: number, futureKind = 'estimate'): string {
   if (Math.abs(offset) < 0.005) return 'now';
   const seconds = `${Math.abs(offset).toFixed(2)} s`;
-  return offset < 0 ? `−${seconds} · past` : `+${seconds} · future (estimate)`;
+  return offset < 0 ? `−${seconds} · past` : `+${seconds} · future (${futureKind})`;
 }
 
 /** A short status for the moment feed's badge. */
-export function momentBadge(offset: number): string {
+export function momentBadge(offset: number, futureKind = 'estimate'): string {
   if (Math.abs(offset) < 0.005) return 'LIVE';
-  return offset < 0 ? `REPLAY −${Math.abs(offset).toFixed(2)} s` : `ESTIMATE +${offset.toFixed(2)} s`;
+  return offset < 0 ? `REPLAY −${Math.abs(offset).toFixed(2)} s` : `${futureKind.toUpperCase()} +${offset.toFixed(2)} s`;
+}
+
+/** Reads a chance as a whole percentage. */
+export function percent(chance: number): string {
+  return `${Math.round(Math.min(1, Math.max(0, chance)) * 100)}%`;
 }
