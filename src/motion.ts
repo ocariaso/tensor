@@ -1,9 +1,23 @@
 import * as THREE from 'three';
 import { branchBlend, type BranchMotion } from './branches';
 import type { TreeSeed } from './forest';
+import type { MotionHistory } from './randomWalk';
+
+let recorded: MotionHistory | null = null;
+
+/** Switches the subject between its scripted path and a recorded random one, mirroring uRandomMotion in subject.glsl. */
+export function useRecordedMotion(history: MotionHistory | null): void {
+  recorded = history;
+}
 
 /** Mirrors subjectOffset in subject.glsl so labels can follow what the shader draws. */
 export function subjectOffset(t: number, target: THREE.Vector3): THREE.Vector3 {
+  if (recorded) return recorded.sample(t, target);
+  return scriptedOffset(t, target);
+}
+
+/** The original hand-written sway, with near-pauses every six seconds. */
+export function scriptedOffset(t: number, target: THREE.Vector3): THREE.Vector3 {
   const period = 6;
   const warped = t - ((0.8 * period) / (2 * Math.PI)) * Math.sin((2 * Math.PI * t) / period);
   return target.set(
@@ -20,8 +34,10 @@ export function treeMotion(seed: Pick<TreeSeed, 'tempo' | 'phase' | 'sway'>, t: 
 
 /** Mirrors treeVelocity in subject.glsl. */
 export function treeVelocity(seed: Pick<TreeSeed, 'tempo' | 'phase' | 'sway'>, t: number, target: THREE.Vector3): THREE.Vector3 {
-  const ahead = treeMotion(seed, t + 0.01, new THREE.Vector3());
-  return treeMotion(seed, t - 0.01, target).sub(ahead).multiplyScalar(-1 / 0.02);
+  // A recording ends at the present, so its slope there can only be read from the moments just before.
+  const ahead = recorded ? 0 : 0.01;
+  const later = treeMotion(seed, t + ahead, new THREE.Vector3());
+  return treeMotion(seed, t + ahead - 0.02, target).sub(later).multiplyScalar(-1 / 0.02);
 }
 
 /**

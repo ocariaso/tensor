@@ -111,8 +111,9 @@ void main() {
 
   // Before its split a parallel universe is our own history, which our trail already draws.
   float universeAlpha = u == 0 ? 1.0 : uParallel * step(0.001, apart) * (float(u) < uUniverseCount ? 1.0 : 0.0);
-  // Nothing of this tree exists before its seed.
+  // Nothing of this tree exists before its seed, and no future is drawn while it is switched off.
   universeAlpha *= step(0.0, sinceSeed);
+  if (aSlice > 0.0 && uFuture <= 0.0) universeAlpha = 0.0;
   float shown = step(0.001, branchAlpha * universeAlpha);
   gl_PointSize = uPointSize * uPixelRatio * (8.0 / -mvPosition.z) * shown;
 

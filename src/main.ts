@@ -15,7 +15,18 @@ import { createTreeUniforms, type TreeUniforms } from './objects/treeUniforms';
 import { createUniversePath } from './objects/universePath';
 import { createGuideLines, setSegments } from './objects/guideLines';
 import { createLabelRenderer, Label } from './labels';
-import { branchMotion, branchOffset, properTimeTicks, subjectOffset, treeMotion, treeVelocity } from './motion';
+import {
+  branchMotion,
+  branchOffset,
+  properTimeTicks,
+  scriptedOffset,
+  subjectOffset,
+  treeMotion,
+  treeVelocity,
+  useRecordedMotion,
+} from './motion';
+import { MotionHistory, RandomWalk } from './randomWalk';
+import { createHistoryUniforms, syncHistoryUniforms } from './objects/historyUniforms';
 import {
   clockRate,
   effectiveConstants,
@@ -49,6 +60,9 @@ const PAST_SLICES = 60;
 const FUTURE_SLICES = 24;
 const SLICES_PER_UNIVERSE = 1 + PAST_SLICES + FUTURE_SLICES * MAX_BRANCHES;
 const SUBJECT_SCALE_4D = 0.45;
+// The recording covers a little more than the longest past the timeline offers.
+const HISTORY_INTERVAL = 1 / 60;
+const HISTORY_SAMPLES = 200;
 
 const canvas = document.querySelector<HTMLCanvasElement>('#stage')!;
 const infoTag = document.querySelector<HTMLElement>('#info-tag')!;
@@ -74,8 +88,13 @@ renderer.setScissorTest(true);
 
 const sphereData = createUvSphere(LAT_SEGMENTS, LON_SEGMENTS);
 const sliceData = createUvSphere(SLICE_LAT, SLICE_LON);
-const cloudUniforms = createCloudUniforms(LAT_SEGMENTS, LON_SEGMENTS, pixelRatio);
-const trailUniforms = createTrailUniforms(pixelRatio);
+// Every material reads the subject's recorded path from the same uniforms, so all feeds show one history.
+const walk = new RandomWalk();
+const history = new MotionHistory(HISTORY_SAMPLES, HISTORY_INTERVAL);
+history.reset(walk.position, 0);
+const historyUniforms = createHistoryUniforms(history);
+const cloudUniforms = { ...createCloudUniforms(LAT_SEGMENTS, LON_SEGMENTS, pixelRatio), ...historyUniforms };
+const trailUniforms = { ...createTrailUniforms(pixelRatio), ...historyUniforms };
 const singularity = createSingularity(pixelRatio);
 scene.add(singularity);
 
@@ -89,7 +108,11 @@ const momentControls = new OrbitControls(momentCamera, momentFeed);
 momentControls.enableDamping = true;
 momentControls.minDistance = 1.5;
 momentControls.maxDistance = 20;
-const momentUniforms = { ...createCloudUniforms(LAT_SEGMENTS, LON_SEGMENTS, pixelRatio), ...createTreeUniforms(TREES[0]) };
+const momentUniforms = {
+  ...createCloudUniforms(LAT_SEGMENTS, LON_SEGMENTS, pixelRatio),
+  ...createTreeUniforms(TREES[0]),
+  ...historyUniforms,
+};
 const momentCloud = createPointCloud(sphereData, momentUniforms);
 const momentFloor = new THREE.GridHelper(8, 16, 0x3a3f66, 0x1c2040);
 momentFloor.position.y = -1.6;
@@ -221,6 +244,7 @@ const settings: Settings = {
   transitionSeconds: 1.6,
   spin: true,
   spinSpeed: 0.35,
+  randomMotion: true,
   timeFlows: true,
   playbackRate: 1,
   playhead: 0,
@@ -368,7 +392,31 @@ function renderLegend(items: LegendItem[]): void {
   );
 }
 
-const pane = createHud(settings, stats, { onStateChange: applyState }, document.querySelector<HTMLElement>('#controls')!);
+const pane = createHud(
+  settings,
+  stats,
+  { onStateChange: applyState, onMotionChange: applyMotionMode },
+  document.querySelector<HTMLElement>('#controls')!,
+);
+
+// While the subject moves at random there is no known future, so none is drawn.
+function futureSpan(): number {
+  return settings.randomMotion ? 0 : settings.futureSeconds;
+}
+
+// Switching to random carries on from where the scripted sway is now, keeping the past already on screen.
+function applyMotionMode(): void {
+  useRecordedMotion(null);
+  if (settings.randomMotion) {
+    history.fill(elapsed, scriptedOffset);
+    scriptedOffset(elapsed, walk.position);
+    treeVelocity(TREES[0], elapsed, walk.velocity);
+    useRecordedMotion(history);
+  }
+  document.body.classList.toggle('no-future', settings.randomMotion);
+  syncHistoryUniforms(historyUniforms, history, settings.randomMotion);
+  syncTimeline();
+}
 
 const playButton = document.querySelector<HTMLButtonElement>('#tl-play')!;
 const scrubInput = document.querySelector<HTMLInputElement>('#tl-scrub')!;
@@ -394,7 +442,7 @@ const rateButtons = PLAYBACK_RATES.map((rate) => {
 });
 
 function setPlayhead(offset: number): void {
-  settings.playhead = clampPlayhead(offset, settings.pastSeconds, settings.futureSeconds);
+  settings.playhead = clampPlayhead(offset, settings.pastSeconds, futureSpan());
   syncTimeline();
 }
 
@@ -409,9 +457,9 @@ function syncTimeline(): void {
   playButton.title = settings.timeFlows ? 'Pause (Space)' : 'Play (Space)';
   for (const { rate, button } of rateButtons) button.classList.toggle('active', rate === settings.playbackRate);
   scrubInput.min = String(-settings.pastSeconds);
-  scrubInput.max = String(settings.futureSeconds);
+  scrubInput.max = String(futureSpan());
   scrubInput.value = String(settings.playhead);
-  nowMark.style.left = `${(settings.pastSeconds / (settings.pastSeconds + settings.futureSeconds)) * 100}%`;
+  nowMark.style.left = `${(settings.pastSeconds / (settings.pastSeconds + futureSpan())) * 100}%`;
   liveButton.classList.toggle('active', Math.abs(settings.playhead) < 0.005);
 }
 
@@ -567,7 +615,7 @@ function placeLabels(
   const radius = SPHERE_RADIUS * subjectScale;
   const ts = settings.timeScale;
   const pastDt = -settings.pastSeconds * temporal;
-  const futureDt = settings.futureSeconds * temporal;
+  const futureDt = futureSpan() * temporal;
 
   // 4D: our own world-tube, read along the time axis.
   subjectOffset(motionTime, at);
@@ -579,7 +627,7 @@ function placeLabels(
   subjectOffset(motionTime + pastDt, at);
   pastLabel.update(at.add(shift.set(0, pastDt * ts - radius - 0.4, 0)), levelBand(l, 4, 6) * visibility);
   subjectOffset(motionTime + futureDt, at);
-  futureLabel.update(at.add(shift.set(0, futureDt * ts + radius + 0.4, 0)), levelBand(l, 4, 4) * visibility);
+  futureLabel.update(at.add(shift.set(0, futureDt * ts + radius + 0.4, 0)), levelBand(l, 4, 4) * visibility * (futureSpan() > 0 ? 1 : 0));
   // Time stays the vertical direction at every level, so its axis moves out to the scene's edge as the scene widens.
   const axisAlpha = levelBand(l, 4, 9) * visibility;
   const lawness = THREE.MathUtils.clamp(l - 8, 0, 1);
@@ -603,7 +651,7 @@ function placeLabels(
   timeAxisLabel.setText(l > 6.5 ? 'time ↑ · within each universe' : l > 4.5 ? 'time ↑ · shared by this history' : 'time ↑');
   timeAxisLabel.update(at.set(axisX, axisTop + 0.35, axisZ), axisAlpha);
   // Tick names sit just inside the axis so they stay on screen however wide the scene gets.
-  axisFutureLabel.update(at.set(axisX + 0.7, axisTop - 0.2, axisZ), axisAlpha);
+  axisFutureLabel.update(at.set(axisX + 0.7, axisTop - 0.2, axisZ), futureSpan() > 0 ? axisAlpha : 0);
   axisNowLabel.setText(l > 6.5 ? 'no shared now · each tree has its own' : 'now');
   axisNowLabel.update(at.set(axisX + (l > 6.5 ? 2 : 0.6), 0.25, axisZ), axisAlpha);
   axisPastLabel.update(at.set(axisX + 0.6, axisBottom + 0.2, axisZ), axisAlpha);
@@ -738,7 +786,7 @@ function placeClocks(l: number, motionTime: number, subjectScale: number, tempor
       return clockRate(speed, lightSpeed, gravity, Math.hypot(local.x, local.z));
     };
 
-    for (const tick of properTimeTicks(rateAt, settings.pastSeconds * temporal, settings.futureSeconds * temporal, CLOCK_INTERVAL)) {
+    for (const tick of properTimeTicks(rateAt, settings.pastSeconds * temporal, futureSpan() * temporal, CLOCK_INTERVAL)) {
       pinchTowardMass(treeMotion(view.seed, motionTime + tick, local), gravity).add(offset);
       local.y = tick * ts;
       const start = local.x + radius + 0.1;
@@ -756,7 +804,7 @@ function placeClocks(l: number, motionTime: number, subjectScale: number, tempor
   const massAlpha = gravityWorld ? band * (gravityWorld.tree.uTreePresence.value as number) : 0;
   const centre = gravityWorld ? (gravityWorld.tree.uTreeOffset.value as THREE.Vector3) : at.set(0, 0, 0);
   const bottom = -settings.pastSeconds * temporal * ts;
-  const top = settings.futureSeconds * temporal * ts + radius;
+  const top = futureSpan() * temporal * ts + radius;
   setSegments(massLine, [[new THREE.Vector3(centre.x, bottom, centre.z), new THREE.Vector3(centre.x, top, centre.z)]], massAlpha * 0.7);
   massLabel.update(local.set(centre.x, bottom - 0.4, centre.z), massAlpha);
 }
@@ -868,11 +916,24 @@ let elapsed = 0;
 let spin = 0;
 let last = performance.now();
 
+// A random subject starts at rest in the centre, so its recorded past begins as a straight, still tube.
+useRecordedMotion(settings.randomMotion ? history : null);
+document.body.classList.toggle('no-future', settings.randomMotion);
+syncHistoryUniforms(historyUniforms, history, settings.randomMotion);
+syncTimeline();
+
 renderer.setAnimationLoop((now) => {
   const dt = Math.min((now - last) / 1000, 0.1);
   last = now;
   stats.fps += (1 / Math.max(dt, 1e-4) - stats.fps) * 0.05;
   const worldDt = settings.timeFlows ? dt * settings.playbackRate : 0;
+  // The random walk steps through the same simulated seconds the clock advances, recording each position.
+  if (settings.randomMotion) {
+    walk.advance(worldDt, elapsed, (time) => {
+      if (time >= history.newestTime + HISTORY_INTERVAL - 1e-6) history.push(walk.position);
+    });
+    syncHistoryUniforms(historyUniforms, history, true);
+  }
   elapsed += worldDt;
   const motionTime = elapsed;
 
@@ -921,7 +982,7 @@ renderer.setAnimationLoop((now) => {
   trailUniforms.uTime.value = elapsed;
   trailUniforms.uMotionTime.value = motionTime;
   trailUniforms.uPast.value = settings.pastSeconds;
-  trailUniforms.uFuture.value = settings.futureSeconds;
+  trailUniforms.uFuture.value = futureSpan();
   trailUniforms.uTimeScale.value = settings.timeScale;
   trailUniforms.uSpin.value = spin;
   trailUniforms.uSpinRate.value = spinning && settings.timeFlows ? settings.spinSpeed * settings.playbackRate : 0;
@@ -984,7 +1045,7 @@ renderer.setAnimationLoop((now) => {
   placeClocks(l, motionTime, subjectScale, temporal, visibility);
 
   // The watched instant sits a fixed offset from the present, so playing advances it like delayed video.
-  settings.playhead = clampPlayhead(settings.playhead, settings.pastSeconds, settings.futureSeconds);
+  settings.playhead = clampPlayhead(settings.playhead, settings.pastSeconds, futureSpan());
   const split = !document.body.classList.contains('single');
   const momentTime = motionTime + settings.playhead * temporal;
   // Branches share the past and split at the present, so the chosen branch only changes the watched future.

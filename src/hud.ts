@@ -7,6 +7,8 @@ export interface Settings {
   transitionSeconds: number;
   spin: boolean;
   spinSpeed: number;
+  /** Random motion is recorded as it happens; scripted motion follows the hand-written sway. */
+  randomMotion: boolean;
   timeFlows: boolean;
   playbackRate: number;
   /** Seconds from the present that the moment feed shows, negative for the past. */
@@ -44,6 +46,7 @@ export interface Stats {
 
 export interface HudCallbacks {
   onStateChange: () => void;
+  onMotionChange: () => void;
 }
 
 export function createHud(settings: Settings, stats: Stats, callbacks: HudCallbacks, container: HTMLElement): Pane {
@@ -85,6 +88,7 @@ export function createHud(settings: Settings, stats: Stats, callbacks: HudCallba
   const sphere = pane.addFolder({ title: '3D · Sphere' });
   sphere.addBinding(settings, 'spin', { label: 'spin' });
   sphere.addBinding(settings, 'spinSpeed', { label: 'speed (rad/s)', min: 0, max: 3, step: 0.05 });
+  sphere.addBinding(settings, 'randomMotion', { label: 'random motion' }).on('change', callbacks.onMotionChange);
 
   const time = pane.addFolder({ title: '4D · Time (T)' });
   time.addBinding(settings, 'pastSeconds', { label: 'past (s)', min: 0.5, max: 3, step: 0.1 });

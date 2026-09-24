@@ -154,8 +154,40 @@ body.single #tl-readout {
   color: var(--muted);
 }
 
-body.branching #branch-picker {
+body.branching #branch-picker,
+body.branching #focus-bar {
   display: flex;
+}
+
+body.branching #feed-structure .feed-title span {
+  display: none;
+}
+
+.picker.top {
+  top: 8px;
+  bottom: auto;
+  left: auto;
+  right: 12px;
+  justify-content: flex-end;
+}
+
+#focus-buttons,
+#others-buttons {
+  display: flex;
+  gap: 4px;
+}
+
+#others-buttons button {
+  color: var(--text);
+}
+
+.label.pickable {
+  pointer-events: auto;
+  cursor: pointer;
+}
+
+.label.focused {
+  box-shadow: 0 0 0 1px currentColor;
 }
 
 #insp-branch-wrap {
@@ -251,6 +283,10 @@ body.branching #insp-branch-wrap {
   align-items: center;
   gap: 8px;
   min-width: 0;
+}
+
+body.no-future #tl-future {
+  display: none;
 }
 
 .tl-edge {

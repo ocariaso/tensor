@@ -13,6 +13,10 @@ export class Label {
     this.object = new CSS2DObject(this.el);
   }
 
+  get element(): HTMLDivElement {
+    return this.el;
+  }
+
   setText(text: string): void {
     if (this.el.textContent !== text) this.el.textContent = text;
   }
