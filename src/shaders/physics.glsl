@@ -2,10 +2,6 @@ uniform float uLightSpeed;   // world units per second
 uniform float uUncertainty;  // positional blur radius in world units
 uniform float uGravity;      // pull strength toward the central mass
 
-vec3 subjectVelocity(float t) {
-  return (subjectOffset(t + 0.01) - subjectOffset(t - 0.01)) / 0.02;
-}
-
 // Length contraction shortens a moving shape along its motion by sqrt(1 - v^2 / c^2).
 vec3 contract(vec3 shape, vec3 velocity) {
   float speed = length(velocity);

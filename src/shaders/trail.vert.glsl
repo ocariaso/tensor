@@ -44,16 +44,19 @@ void main() {
   // Same upright orientation the cloud reaches when it finishes curling into a sphere.
   float theta = (1.0 - uv.y) * PI;
   float phi = uv.x * 2.0 * PI;
-  vec3 p = uSphereRadius * uSubjectScale * vec3(sin(theta) * cos(phi), cos(theta), -sin(theta) * sin(phi));
-  p = spinY(uSpin + uSpinRate * dt) * p;
+  // A tree grows out of its seed, so its trunk tapers to a single point at the moment it began.
+  float sinceSeed = dt + uTreeAge;
+  float growth = smoothstep(0.0, 0.35, sinceSeed);
+  vec3 p = uSphereRadius * uSubjectScale * uTreeScale * growth * vec3(sin(theta) * cos(phi), cos(theta), -sin(theta) * sin(phi));
+  p = spinY((uSpin + uSpinRate * dt) * uTreeSpin) * p;
 
-  // A parallel universe shares our history until its split, then peels away onto its own path.
-  float splitAgo = uUniverseSplit[u] * uPast;
+  // A parallel universe shares its tree's history until its split, which can only come after the seed.
+  float splitAgo = min(uUniverseSplit[u] * uPast, 0.8 * uTreeAge);
   float apart = u == 0 ? 1.0 : smoothstep(0.0, splitAgo, dt + splitAgo);
   float theirTime = uMotionTime + dt + uUniversePhase[u];
-  vec3 ours = subjectOffset(uMotionTime + dt);
-  vec3 theirs = subjectOffset(theirTime) * uUniverseAmp[u];
-  vec3 velocity = mix(subjectVelocity(uMotionTime + dt), subjectVelocity(theirTime) * uUniverseAmp[u], apart);
+  vec3 ours = treeMotion(uMotionTime + dt);
+  vec3 theirs = treeMotion(theirTime) * uUniverseAmp[u];
+  vec3 velocity = mix(treeVelocity(uMotionTime + dt), treeVelocity(theirTime) * uUniverseAmp[u], apart);
   p = contract(p, velocity) + mix(ours, theirs, apart);
 
   // Branches start together at the present and drift apart along W, drawn as the X direction.
@@ -68,6 +71,7 @@ void main() {
   p.x += uUniverseShift[u] * uUniverseSpacing * uParallel * apart;
   p = gravitate(uncertain(p, uv + vec2(aSlice * 3.1 + aBranch * 0.9, aUniverse * 1.7), uTime));
   p.y += dt * uTimeScale;
+  p += uTreeOffset;
 
   vec4 mvPosition = modelViewMatrix * vec4(p, 1.0);
   gl_Position = projectionMatrix * mvPosition;
@@ -79,6 +83,8 @@ void main() {
 
   // Before its split a parallel universe is our own history, which our trail already draws.
   float universeAlpha = u == 0 ? 1.0 : uParallel * step(0.001, apart) * (float(u) < uUniverseCount ? 1.0 : 0.0);
+  // Nothing of this tree exists before its seed.
+  universeAlpha *= step(0.0, sinceSeed);
   float shown = step(0.001, branchAlpha * universeAlpha);
   gl_PointSize = uPointSize * uPixelRatio * (8.0 / -mvPosition.z) * shown;
 
@@ -86,9 +92,10 @@ void main() {
   vec3 futureColor = mix(vec3(0.35, 0.95, 0.9), uBranchColors[b], uBranching);
   vec3 color = isPast ? mix(vec3(0.6, 0.45, 1.0), vec3(0.2, 0.25, 0.65), age) : futureColor;
   // The tint marks a universe's history strongly but only lightly touches its branch colors.
-  vColor = u == 0 ? color : mix(color, uUniverseTints[u], isPast || isPresent ? 0.65 : 0.35);
+  color = u == 0 ? color : mix(color, uUniverseTints[u], isPast || isPresent ? 0.65 : 0.35);
+  vColor = mix(color, uTreeTint, uTreeTintAmount);
 
   // A parallel universe's present is drawn from this sparse slice, so it needs extra gain to read as solid.
   float sliceGain = isPresent ? 5.0 : (isPast ? 1.0 : mix(0.6, 1.6, uBranching));
-  vAlpha = pow(1.0 - age, 1.5) * sliceGain * branchAlpha * universeAlpha * uTemporal * uVisibility;
+  vAlpha = pow(1.0 - age, 1.5) * sliceGain * branchAlpha * universeAlpha * uTemporal * uVisibility * uTreePresence;
 }

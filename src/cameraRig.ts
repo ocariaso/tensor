@@ -12,6 +12,8 @@ export class CameraRig {
   readonly controls: OrbitControls;
   private rules: CameraRules = { rotate: true, pan: 'free', zoom: true };
   private gliding = false;
+  private readonly glidePosition = new THREE.Vector3();
+  private readonly glideTarget = new THREE.Vector3();
   private readonly scratch = new THREE.Vector3();
 
   constructor(canvas: HTMLCanvasElement) {
@@ -22,7 +24,7 @@ export class CameraRig {
     this.controls.target.copy(HOME_TARGET);
     this.controls.enableDamping = true;
     this.controls.minDistance = 0.5;
-    this.controls.maxDistance = 40;
+    this.controls.maxDistance = 60;
   }
 
   apply(rules: CameraRules): void {
@@ -31,19 +33,29 @@ export class CameraRig {
     this.controls.enablePan = rules.pan !== 'none';
     this.controls.enableZoom = rules.zoom;
     // Without rotation the view must face the world straight on, so glide there first.
-    this.gliding = !rules.rotate;
+    if (!rules.rotate) this.glideTo(INHABITANT_HOME, HOME_TARGET);
+  }
+
+  glideTo(position: THREE.Vector3, target: THREE.Vector3): void {
+    this.glidePosition.copy(position);
+    this.glideTarget.copy(target);
+    this.gliding = true;
+  }
+
+  glideHome(): void {
+    this.glideTo(SPECTATOR_HOME, HOME_TARGET);
   }
 
   update(dt: number): void {
     if (this.gliding) {
       this.controls.enabled = false;
       const k = 1 - Math.exp(-dt * 4);
-      this.camera.position.lerp(INHABITANT_HOME, k);
-      this.controls.target.lerp(HOME_TARGET, k);
+      this.camera.position.lerp(this.glidePosition, k);
+      this.controls.target.lerp(this.glideTarget, k);
       this.camera.lookAt(this.controls.target);
-      if (this.camera.position.distanceToSquared(INHABITANT_HOME) < 1e-5) {
-        this.camera.position.copy(INHABITANT_HOME);
-        this.controls.target.copy(HOME_TARGET);
+      if (this.camera.position.distanceToSquared(this.glidePosition) < 1e-5) {
+        this.camera.position.copy(this.glidePosition);
+        this.controls.target.copy(this.glideTarget);
         this.gliding = false;
       }
       return;

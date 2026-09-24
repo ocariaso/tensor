@@ -7,13 +7,35 @@ import cloudVertex from '../shaders/cloud.vert.glsl?raw';
 import fragmentShader from '../shaders/cloud.frag.glsl?raw';
 
 export type PointCloud = THREE.Points<THREE.BufferGeometry, THREE.ShaderMaterial>;
+export type CloudUniforms = Record<string, THREE.IUniform>;
 
-export function createPointCloud(
-  data: PointCloudData,
-  latSegments: number,
-  lonSegments: number,
-  pixelRatio: number,
-): PointCloud {
+/** One uniform set shared by every tree's present sphere so a single per-frame update drives them all. */
+export function createCloudUniforms(latSegments: number, lonSegments: number, pixelRatio: number): CloudUniforms {
+  return {
+    uLevel: { value: 0 },
+    uExtent: { value: 1.7 },
+    uSphereRadius: { value: 1.2 },
+    uSubjectScale: { value: 1 },
+    uSpin: { value: 0 },
+    uLatSegments: { value: latSegments },
+    uLonSegments: { value: lonSegments },
+    uSpriteWorld: { value: 0.04 },
+    uDensity: { value: 2 },
+    uPointSize: { value: 3 },
+    uOpacity: { value: 0.35 },
+    uPixelRatio: { value: pixelRatio },
+    uTime: { value: 0 },
+    uMotionTime: { value: 0 },
+    uLightSpeed: { value: LIGHT_SPEED_OURS },
+    uUncertainty: { value: UNCERTAINTY_OURS },
+    uGravity: { value: GRAVITY_OURS },
+    uOmega: { value: 2 },
+    uAmplitude: { value: 0.35 },
+    uWaveNumber: { value: 4 },
+  };
+}
+
+export function createPointCloud(data: PointCloudData, uniforms: CloudUniforms): PointCloud {
   const geometry = new THREE.BufferGeometry();
   geometry.setAttribute('position', new THREE.BufferAttribute(data.positions, 3));
   geometry.setAttribute('uv', new THREE.BufferAttribute(data.uvs, 2));
@@ -21,28 +43,7 @@ export function createPointCloud(
   const material = new THREE.ShaderMaterial({
     vertexShader: `${subjectChunk}\n${physicsChunk}\n${cloudVertex}`,
     fragmentShader,
-    uniforms: {
-      uLevel: { value: 0 },
-      uExtent: { value: 1.7 },
-      uSphereRadius: { value: 1.2 },
-      uSubjectScale: { value: 1 },
-      uSpin: { value: 0 },
-      uLatSegments: { value: latSegments },
-      uLonSegments: { value: lonSegments },
-      uSpriteWorld: { value: 0.04 },
-      uDensity: { value: 2 },
-      uPointSize: { value: 3 },
-      uOpacity: { value: 0.35 },
-      uPixelRatio: { value: pixelRatio },
-      uTime: { value: 0 },
-      uMotionTime: { value: 0 },
-      uLightSpeed: { value: LIGHT_SPEED_OURS },
-      uUncertainty: { value: UNCERTAINTY_OURS },
-      uGravity: { value: GRAVITY_OURS },
-      uOmega: { value: 2 },
-      uAmplitude: { value: 0.35 },
-      uWaveNumber: { value: 4 },
-    },
+    uniforms,
     transparent: true,
     depthWrite: false,
     blending: THREE.AdditiveBlending,

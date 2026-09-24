@@ -1,8 +1,7 @@
 import { Pane } from 'tweakpane';
 import type { DimensionId, ViewMode } from './dimensions';
-import { GRAVITY_RANGE, LIGHT_SPEED_RANGE, UNCERTAINTY_RANGE, type ConstantDials } from './physics';
 
-export interface Settings extends ConstantDials {
+export interface Settings {
   dimension: DimensionId;
   view: ViewMode;
   transitionSeconds: number;
@@ -18,6 +17,8 @@ export interface Settings extends ConstantDials {
   branchSpread: number;
   universeCount: number;
   universeSpacing: number;
+  treeCount: number;
+  treeSpacing: number;
   pointSize: number;
   opacity: number;
   density: number;
@@ -34,10 +35,7 @@ export interface Stats {
 
 export interface HudCallbacks {
   onStateChange: () => void;
-  onResetConstants: () => void;
 }
-
-const signed = (v: number) => `${v > 0 ? '+' : ''}${v.toFixed(1)}`;
 
 export function createHud(settings: Settings, stats: Stats, callbacks: HudCallbacks): Pane {
   const pane = new Pane({ title: 'TENSOR' });
@@ -54,7 +52,7 @@ export function createHud(settings: Settings, stats: Stats, callbacks: HudCallba
         '4D · Spacetime': '4d',
         '5D · Branches': '5d',
         '6D · Parallel': '6d',
-        '7D · Laws of Physics': '7d',
+        '7D · Forest of Seeds': '7d',
       },
     })
     .on('change', callbacks.onStateChange);
@@ -95,16 +93,11 @@ export function createHud(settings: Settings, stats: Stats, callbacks: HudCallba
     .on('change', callbacks.onStateChange);
   parallel.addBinding(settings, 'universeSpacing', { label: 'U spacing', min: 1.5, max: 5, step: 0.05 });
 
-  const constants = pane.addFolder({ title: '7D · Constants (V), ours ×10^n' });
-  constants.addBinding(settings, 'lightSpeedExp', { label: 'c (light)', ...LIGHT_SPEED_RANGE, step: 0.1, format: signed });
-  constants.addBinding(settings, 'uncertaintyExp', {
-    label: 'h (Planck)',
-    ...UNCERTAINTY_RANGE,
-    step: 0.1,
-    format: signed,
-  });
-  constants.addBinding(settings, 'gravityExp', { label: 'G (gravity)', ...GRAVITY_RANGE, step: 0.1, format: signed });
-  constants.addButton({ title: 'Reset to our universe' }).on('click', callbacks.onResetConstants);
+  const forest = pane.addFolder({ title: '7D · Seeds (V)' });
+  forest
+    .addBinding(settings, 'treeCount', { label: 'trees', min: 2, max: 4, step: 1 })
+    .on('change', callbacks.onStateChange);
+  forest.addBinding(settings, 'treeSpacing', { label: 'V spacing', min: 3, max: 10, step: 0.1 });
 
   const look = pane.addFolder({ title: 'Appearance', expanded: false });
   look.addBinding(settings, 'coreSize', { label: '0D size (px)', min: 16, max: 160, step: 1 });

@@ -3,14 +3,14 @@ import { wrapAngle } from './angle';
 import { BRANCH_COLORS, layoutBranches, MAX_BRANCHES } from './branches';
 import { CameraRig } from './cameraRig';
 import { cameraRulesFor, DIMENSIONS, SPECTATOR_NOTE, type DimensionId } from './dimensions';
+import { clampTreeCount, TREES } from './forest';
 import { createSliceInstances, createUniverseInstances } from './geometry/timeSlices';
 import { createUvSphere } from './geometry/uvSphere';
-import { effectiveConstants } from './physics';
 import { createHud, type Settings, type Stats } from './hud';
-import { createCentralMass } from './objects/centralMass';
-import { createPointCloud } from './objects/pointCloud';
+import { createCloudUniforms, createPointCloud } from './objects/pointCloud';
 import { createSingularity } from './objects/singularity';
 import { createTrail, createTrailUniforms } from './objects/trail';
+import { createTreeUniforms } from './objects/treeUniforms';
 import { Transition } from './transition';
 import { clampUniverseCount, MAX_UNIVERSES, UNIVERSE_TINTS, universeLabel } from './universes';
 
@@ -41,14 +41,29 @@ const scene = new THREE.Scene();
 const rig = new CameraRig(canvas);
 
 const sphereData = createUvSphere(LAT_SEGMENTS, LON_SEGMENTS);
-const cloud = createPointCloud(sphereData, LAT_SEGMENTS, LON_SEGMENTS, pixelRatio);
-const singularity = createSingularity(pixelRatio);
 const sliceData = createUvSphere(SLICE_LAT, SLICE_LON);
+const cloudUniforms = createCloudUniforms(LAT_SEGMENTS, LON_SEGMENTS, pixelRatio);
 const trailUniforms = createTrailUniforms(pixelRatio);
-const trail = createTrail(sliceData, createSliceInstances(PAST_SLICES, FUTURE_SLICES, MAX_BRANCHES), trailUniforms);
-const parallel = createTrail(sliceData, createUniverseInstances(PAST_SLICES, FUTURE_SLICES, MAX_UNIVERSES, MAX_BRANCHES), trailUniforms);
-const centralMass = createCentralMass();
-scene.add(cloud, singularity, trail, parallel, centralMass);
+const singularity = createSingularity(pixelRatio);
+scene.add(singularity);
+
+// Every tree reuses the shared uniforms and adds its own starting conditions on top.
+const forest = TREES.map((seed) => {
+  const tree = createTreeUniforms(seed);
+  const view = {
+    seed,
+    tree,
+    cloud: createPointCloud(sphereData, { ...cloudUniforms, ...tree }),
+    trail: createTrail(sliceData, createSliceInstances(PAST_SLICES, FUTURE_SLICES, MAX_BRANCHES), { ...trailUniforms, ...tree }),
+    parallel: createTrail(
+      sliceData,
+      createUniverseInstances(PAST_SLICES, FUTURE_SLICES, MAX_UNIVERSES, MAX_BRANCHES),
+      { ...trailUniforms, ...tree },
+    ),
+  };
+  scene.add(view.cloud, view.trail, view.parallel);
+  return view;
+});
 
 const settings: Settings = {
   dimension: '0d',
@@ -66,10 +81,8 @@ const settings: Settings = {
   branchSpread: 1.2,
   universeCount: 3,
   universeSpacing: 1.9,
-  // 7D opens on a visibly different universe; the reset button returns every dial to ours.
-  lightSpeedExp: -3,
-  uncertaintyExp: 2.3,
-  gravityExp: 3.5,
+  treeCount: 3,
+  treeSpacing: 5,
   pointSize: 4,
   opacity: 0.9,
   density: 2,
@@ -89,10 +102,18 @@ if (viewParam === 'spectator' || viewParam === 'inhabitant') settings.view = vie
 
 const level = new Transition(DIMENSIONS[settings.dimension].level, settings.transitionSeconds);
 const tubeVisibility = new Transition(settings.view === 'spectator' ? 1 : 0, 0.6);
+let framingForest: boolean | undefined;
 
 interface LegendItem {
   color: string;
   label: string;
+}
+
+// Frames the forest from the front and above so ours stands in front and the others recede up the screen.
+function forestView(): { position: THREE.Vector3; target: THREE.Vector3 } {
+  const depth = settings.treeSpacing * (clampTreeCount(settings.treeCount) - 1);
+  const target = new THREE.Vector3(0, 0, -depth / 2);
+  return { position: new THREE.Vector3(-2.5, 3 + depth * 0.35, 7), target };
 }
 
 function applyState(): void {
@@ -100,7 +121,20 @@ function applyState(): void {
   level.duration = settings.transitionSeconds;
   level.retarget(spec.level);
   tubeVisibility.retarget(settings.view === 'spectator' ? 1 : 0);
-  rig.apply(cameraRulesFor(settings.dimension, settings.view));
+  const rules = cameraRulesFor(settings.dimension, settings.view);
+  rig.apply(rules);
+
+  // Only the Spectator sees the forest, so the camera pulls back for it and returns home otherwise.
+  const wantsForest = spec.id === '7d' && settings.view === 'spectator';
+  if (wantsForest !== (framingForest ?? false) && rules.rotate) {
+    if (wantsForest) {
+      const { position, target } = forestView();
+      rig.glideTo(position, target);
+    } else {
+      rig.glideHome();
+    }
+  }
+  framingForest = wantsForest;
 
   infoTag.textContent = spec.tag;
   infoTitle.textContent = spec.title;
@@ -120,10 +154,12 @@ function applyState(): void {
         .map((p, i) => ({ color: BRANCH_COLORS[i], label: `${String.fromCharCode(65 + i)} ${Math.round(p * 100)}%`, p }))
         .filter(({ p }) => p > 0),
     );
-  } else if (spec.level >= 6) {
+  } else if (spec.id === '6d') {
     renderLegend(
       Array.from({ length: universeCount }, (_, i) => ({ color: UNIVERSE_TINTS[i], label: universeLabel(i) })),
     );
+  } else if (spec.id === '7d') {
+    renderLegend(TREES.slice(0, clampTreeCount(settings.treeCount)).map((t) => ({ color: t.tint, label: t.label })));
   } else {
     renderLegend([]);
   }
@@ -142,15 +178,7 @@ function renderLegend(items: LegendItem[]): void {
   );
 }
 
-const pane = createHud(settings, stats, {
-  onStateChange: applyState,
-  onResetConstants: () => {
-    settings.lightSpeedExp = 0;
-    settings.uncertaintyExp = 0;
-    settings.gravityExp = 0;
-    pane.refresh();
-  },
-});
+const pane = createHud(settings, stats, { onStateChange: applyState });
 
 window.addEventListener('keydown', (event) => {
   if (event.target instanceof HTMLInputElement) return;
@@ -187,23 +215,18 @@ renderer.setAnimationLoop((now) => {
 
   const l = level.update(dt);
   const temporal = THREE.MathUtils.clamp(l - 3, 0, 1);
-  const parallelness = THREE.MathUtils.clamp(l - 5, 0, 1);
   const branching = THREE.MathUtils.clamp(l - 4, 0, 1);
-  const lawShift = THREE.MathUtils.clamp(l - 6, 0, 1);
-  const physics = effectiveConstants(settings, lawShift);
+  const parallelness = THREE.MathUtils.clamp(l - 5, 0, 1);
+  const forestness = THREE.MathUtils.clamp(l - 6, 0, 1);
   const subjectScale = THREE.MathUtils.lerp(1, SUBJECT_SCALE_4D, temporal);
   const spinning = settings.spin && l >= 3;
   // Spin only builds up on the finished sphere so leaving 3D unwinds at most half a turn.
   if (spinning) spin = wrapAngle(spin + worldDt * settings.spinSpeed);
 
-  const cloudUniforms = cloud.material.uniforms;
   cloudUniforms.uLevel.value = l;
   cloudUniforms.uSpin.value = spin;
   cloudUniforms.uTime.value = elapsed;
   cloudUniforms.uMotionTime.value = motionTime;
-  cloudUniforms.uLightSpeed.value = physics.lightSpeed;
-  cloudUniforms.uUncertainty.value = physics.uncertainty;
-  cloudUniforms.uGravity.value = physics.gravity;
   cloudUniforms.uSubjectScale.value = subjectScale;
   cloudUniforms.uOmega.value = settings.omega;
   cloudUniforms.uAmplitude.value = settings.amplitude;
@@ -213,8 +236,6 @@ renderer.setAnimationLoop((now) => {
   cloudUniforms.uSpriteWorld.value = (settings.pointSize * 16 * Math.tan(THREE.MathUtils.degToRad(rig.camera.fov / 2))) / window.innerHeight;
   cloudUniforms.uOpacity.value = settings.opacity;
   cloudUniforms.uDensity.value = settings.density;
-  // The singularity stands in for the cloud while everything sits on the origin.
-  cloud.visible = l > 0.001;
 
   const coreUniforms = singularity.material.uniforms;
   coreUniforms.uTime.value = elapsed;
@@ -225,9 +246,6 @@ renderer.setAnimationLoop((now) => {
   singularity.visible = coreUniforms.uPresence.value > 0.001;
 
   const visibility = tubeVisibility.update(dt);
-  // The mass's world-line shows only while its pull is dialed above ours, and only to the Spectator.
-  centralMass.material.opacity = 0.6 * lawShift * visibility * THREE.MathUtils.clamp(settings.gravityExp / 2, 0, 1);
-  centralMass.visible = centralMass.material.opacity > 0.001;
   trailUniforms.uTemporal.value = temporal;
   trailUniforms.uBranching.value = branching;
   trailUniforms.uParallel.value = parallelness;
@@ -237,9 +255,6 @@ renderer.setAnimationLoop((now) => {
   trailUniforms.uVisibility.value = visibility;
   trailUniforms.uTime.value = elapsed;
   trailUniforms.uMotionTime.value = motionTime;
-  trailUniforms.uLightSpeed.value = physics.lightSpeed;
-  trailUniforms.uUncertainty.value = physics.uncertainty;
-  trailUniforms.uGravity.value = physics.gravity;
   trailUniforms.uPast.value = settings.pastSeconds;
   trailUniforms.uFuture.value = settings.futureSeconds;
   trailUniforms.uTimeScale.value = settings.timeScale;
@@ -250,16 +265,28 @@ renderer.setAnimationLoop((now) => {
   // Only the slices that can show are sent to the GPU, since hidden instances still cost vertex work.
   const futureRuns = branching > 0 ? settings.branchCount : 1;
   const otherUniverses = parallelness > 0 ? clampUniverseCount(settings.universeCount) - 1 : 0;
-  trail.geometry.instanceCount = PAST_SLICES + FUTURE_SLICES * futureRuns;
-  parallel.geometry.instanceCount = SLICES_PER_UNIVERSE * otherUniverses;
-  trail.visible = temporal * visibility > 0.001;
-  parallel.visible = trail.visible && otherUniverses > 0;
+  const treeCount = clampTreeCount(settings.treeCount);
+  let points = singularity.visible ? 1 : 0;
 
-  stats.points =
-    (cloud.visible ? sphereData.count : 0) +
-    (singularity.visible ? 1 : 0) +
-    (trail.visible ? sliceData.count * trail.geometry.instanceCount : 0) +
-    (parallel.visible ? sliceData.count * parallel.geometry.instanceCount : 0);
+  forest.forEach((view, i) => {
+    const isOurs = i === 0;
+    // Other trees exist only in 7D and, like everything beyond the present, only for the Spectator.
+    const presence = isOurs ? 1 : i < treeCount ? forestness * visibility : 0;
+    view.tree.uTreePresence.value = presence;
+    view.tree.uTreeOffset.value.set(0, 0, -settings.treeSpacing * i);
+
+    // The singularity stands in for our cloud while everything sits on the origin.
+    view.cloud.visible = presence > 0.001 && l > 0.001;
+    view.trail.geometry.instanceCount = PAST_SLICES + FUTURE_SLICES * futureRuns;
+    view.parallel.geometry.instanceCount = SLICES_PER_UNIVERSE * otherUniverses;
+    view.trail.visible = presence > 0.001 && temporal * visibility > 0.001;
+    view.parallel.visible = view.trail.visible && otherUniverses > 0;
+
+    if (view.cloud.visible) points += sphereData.count;
+    if (view.trail.visible) points += sliceData.count * view.trail.geometry.instanceCount;
+    if (view.parallel.visible) points += sliceData.count * view.parallel.geometry.instanceCount;
+  });
+  stats.points = points;
 
   rig.update(dt);
   renderer.render(scene, rig.camera);

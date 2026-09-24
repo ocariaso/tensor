@@ -88,11 +88,11 @@ export const DIMENSIONS: Record<DimensionId, DimensionSpec> = {
   '7d': {
     id: '7d',
     tag: 'Seven Dimensions · Speculative',
-    title: '7D · Different Laws of Physics',
-    body: 'Universes where the constants of nature differ. Lower c and moving things shorten along their motion, raise h and positions blur into uncertainty, and raise G and space pinches toward a central mass. In our universe all three effects are far too small to see.',
+    title: '7D · A Forest of Seeds',
+    body: 'Whole universes that began from different starting points stand side by side along a new direction, V. Each tree grows from its own seed, so they never share a trunk. The laws of physics are the same everywhere; only the starting conditions differ. Separate universes share no clock, so each tree is shown a fixed time after its own seed.',
     level: 7,
     inhabitant: FREE,
-    inhabitantNote: 'Inhabitant view: you live under one fixed set of laws and only experience your own present moment.',
+    inhabitantNote: 'Inhabitant view: you live in one tree, in its present moment, so the rest of the forest is invisible to you.',
   },
 };
 

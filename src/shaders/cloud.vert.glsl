@@ -36,7 +36,7 @@ void main() {
   float bend = s * curvature;
   float ringRadius = curvature > 1e-4 ? sin(bend) / curvature : s;
   float depth = curvature > 1e-4 ? (1.0 - cos(bend)) / curvature : 0.0;
-  float scale = mix(1.0, uSphereRadius * PI / uExtent, wrap) * uSubjectScale;
+  float scale = mix(1.0, uSphereRadius * PI / uExtent, wrap) * uSubjectScale * uTreeScale;
   vec3 p = vec3(cos(angle) * ringRadius, sin(angle) * ringRadius, wrap * uExtent / PI - depth) * scale;
 
   vec3 n = vec3(cos(angle) * sin(bend), sin(angle) * sin(bend), cos(bend));
@@ -44,12 +44,12 @@ void main() {
   // The sphere tips its pole upright as it closes, then spins about that vertical axis.
   float tilt = -wrap * 0.5 * PI;
   mat3 tipUp = mat3(1.0, 0.0, 0.0, 0.0, cos(tilt), sin(tilt), 0.0, -sin(tilt), cos(tilt));
-  mat3 turn = spinY(uSpin * wrap);
+  mat3 turn = spinY(uSpin * uTreeSpin * wrap);
   p = turn * tipUp * p;
   n = turn * tipUp * n;
-  p = contract(p, subjectVelocity(uMotionTime) * wrap);
-  p += subjectOffset(uMotionTime) * wrap;
-  p = gravitate(uncertain(p, uv, uTime));
+  p = contract(p, treeVelocity(uMotionTime) * wrap);
+  p += treeMotion(uMotionTime) * wrap;
+  p = gravitate(uncertain(p, uv, uTime)) + uTreeOffset;
 
   vec4 mvPosition = modelViewMatrix * vec4(p, 1.0);
   gl_Position = projectionMatrix * mvPosition;
@@ -83,6 +83,6 @@ void main() {
   float wave = 1.0 + uAmplitude * sin(uOmega * uTime - uWaveNumber * s);
 
   vec3 base = mix(vec3(0.35, 0.55, 1.0), vec3(0.75, 0.45, 1.0), r);
-  vColor = mix(base, vec3(1.0, 0.72, 0.3), meridian) * wave;
-  vAlpha = smoothstep(0.0, 0.08, stretch) * kept;
+  vColor = mix(mix(base, vec3(1.0, 0.72, 0.3), meridian), uTreeTint, uTreeTintAmount) * wave;
+  vAlpha = smoothstep(0.0, 0.08, stretch) * kept * uTreePresence;
 }
