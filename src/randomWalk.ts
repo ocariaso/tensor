@@ -10,7 +10,8 @@ export interface WalkTuning {
   pushZ: number;
 }
 
-export const DEFAULT_WALK: WalkTuning = { pull: 0.7, damping: 1.1, pushX: 1.3, pushZ: 0.55 };
+// Tuned so the subject typically stays within about one unit of the centre, keeping it in view.
+export const DEFAULT_WALK: WalkTuning = { pull: 0.7, damping: 1.1, pushX: 0.8, pushZ: 0.35 };
 
 // Fixed simulation step, so a paused or sped-up clock still moves the subject the same way per simulated second.
 const SIM_STEP = 1 / 120;
@@ -28,7 +29,7 @@ export function mulberry32(seed: number): () => number {
 }
 
 /** Standard normal sample from two uniform samples. */
-function gaussian(random: () => number): number {
+export function gaussian(random: () => number): number {
   return Math.sqrt(-2 * Math.log(1 - random())) * Math.cos(2 * Math.PI * random());
 }
 
