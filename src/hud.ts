@@ -65,6 +65,8 @@ export interface HudCallbacks {
   onStateChange: () => void;
   onMotionChange: () => void;
   onResetModel: () => void;
+  onExportModel: () => void;
+  onImportModel: () => void;
 }
 
 export function createHud(settings: Settings, stats: Stats, callbacks: HudCallbacks, container: HTMLElement): Pane {
@@ -128,6 +130,8 @@ export function createHud(settings: Settings, stats: Stats, callbacks: HudCallba
   learning.addBinding(stats, 'claimed', { label: 'claimed', readonly: true, format: asPercent });
   learning.addBinding(stats, 'cameTrue', { label: 'came true', readonly: true, format: asPercent });
   learning.addBinding(settings, 'showLastCheck', { label: 'show last check' });
+  learning.addButton({ title: 'Export model…' }).on('click', callbacks.onExportModel);
+  learning.addButton({ title: 'Import model…' }).on('click', callbacks.onImportModel);
   learning.addButton({ title: 'Reset model' }).on('click', callbacks.onResetModel);
 
   const branches = pane.addFolder({ title: '5D · Branches (W)' });

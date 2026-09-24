@@ -1,7 +1,15 @@
 import { describe, expect, it } from 'vitest';
 import { mulberry32, RandomWalk } from '../randomWalk';
 import { MotionLearner } from './forecast';
-import { forgetLearning, loadLearning, saveLearning, type KeyValueStore } from './modelStore';
+import {
+  exportFileName,
+  forgetLearning,
+  loadLearning,
+  restoreLearning,
+  saveLearning,
+  serializeLearning,
+  type KeyValueStore,
+} from './modelStore';
 import { LinearMotionModel } from './motionModel';
 import { PredictionCheck } from './predictionCheck';
 
@@ -64,7 +72,7 @@ describe('model store', () => {
     const saved = trained();
     saveLearning(store, saved.model, { one: saved.check });
     const text = store.data.get('tensor.model.v1')!;
-    store.data.set('tensor.model.v1', text.replace('"weightsX":[', '"weightsX":["oops",'));
+    store.data.set('tensor.model.v1', text.replace('"weightsX": [', '"weightsX": ["oops", '));
 
     const current = trained();
     const before = current.model.predictVelocity(STATE);
@@ -80,6 +88,31 @@ describe('model store', () => {
     saveLearning(store, saved.model, { one: saved.check });
     forgetLearning(store);
     expect(loadLearning(store, new LinearMotionModel(), { one: new PredictionCheck(1, 0.5) })).toBe(false);
+  });
+
+  it('round-trips through an exported file into a fresh model', () => {
+    const saved = trained();
+    const text = serializeLearning(saved.model, { one: saved.check });
+    const model = new LinearMotionModel();
+    const check = new PredictionCheck(1, 0.5);
+    expect(restoreLearning(text, model, { one: check })).toBe(true);
+    expect(model.predictVelocity(STATE)).toEqual(saved.model.predictVelocity(STATE));
+    expect(check.noiseScale).toBe(1.4);
+  });
+
+  it('rejects files that are not TENSOR models', () => {
+    const model = new LinearMotionModel();
+    const check = new PredictionCheck(1, 0.5);
+    expect(restoreLearning('{"hello":"world"}', model, { one: check })).toBe(false);
+    expect(restoreLearning('<html></html>', model, { one: check })).toBe(false);
+    const saved = trained();
+    const other = serializeLearning(saved.model, { one: saved.check }).replace('"version": 1', '"version": 99');
+    expect(restoreLearning(other, model, { one: check })).toBe(false);
+    expect(model.lessons).toBe(0);
+  });
+
+  it('names exports by date and time', () => {
+    expect(exportFileName(new Date(2026, 8, 24, 9, 5))).toBe('tensor-model-2026-09-24-0905.json');
   });
 
   it('keeps working when storage is blocked', () => {

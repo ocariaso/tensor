@@ -30,7 +30,15 @@ import { createHistoryUniforms, syncHistoryUniforms } from './objects/historyUni
 import { CONFIDENCE_RADIUS, forecast, MotionLearner, VELOCITY_WINDOW } from './ml/forecast';
 import { LinearMotionModel } from './ml/motionModel';
 import { PredictionCheck, type CheckResult } from './ml/predictionCheck';
-import { forgetLearning, loadLearning, saveLearning, type KeyValueStore } from './ml/modelStore';
+import {
+  exportFileName,
+  forgetLearning,
+  loadLearning,
+  restoreLearning,
+  saveLearning,
+  serializeLearning,
+  type KeyValueStore,
+} from './ml/modelStore';
 import { MotionTrack } from './motionTrack';
 import {
   clockRate,
@@ -133,6 +141,35 @@ function saveProgress(): void {
 }
 
 window.addEventListener('pagehide', saveProgress);
+
+// Downloads everything learned as a file that can be kept, shared, or imported in any browser.
+function exportModel(): void {
+  const blob = new Blob([serializeLearning(learner.model, scorekeepers)], { type: 'application/json' });
+  const link = document.createElement('a');
+  link.href = URL.createObjectURL(blob);
+  link.download = exportFileName();
+  link.click();
+  URL.revokeObjectURL(link.href);
+  stats.memory = `exported · ${learner.model.lessons.toLocaleString()} lessons`;
+}
+
+const importInput = document.createElement('input');
+importInput.type = 'file';
+importInput.accept = '.json,application/json';
+importInput.addEventListener('change', async () => {
+  const file = importInput.files?.[0];
+  importInput.value = '';
+  if (!file) return;
+  if (restoreLearning(await file.text(), learner.model, scorekeepers)) {
+    // The recording keeps going, so only the lessons in progress are dropped.
+    learner.restart();
+    ghost = null;
+    saveProgress();
+    stats.memory = `imported · ${learner.model.lessons.toLocaleString()} lessons`;
+  } else {
+    stats.memory = 'import failed: not a TENSOR model';
+  }
+});
 const historyUniforms = createHistoryUniforms(track);
 const cloudUniforms = { ...createCloudUniforms(LAT_SEGMENTS, LON_SEGMENTS, pixelRatio), ...historyUniforms };
 const trailUniforms = { ...createTrailUniforms(pixelRatio), ...historyUniforms };
@@ -467,7 +504,13 @@ function renderLegend(items: LegendItem[]): void {
 const pane = createHud(
   settings,
   stats,
-  { onStateChange: applyState, onMotionChange: applyMotionMode, onResetModel: resetModel },
+  {
+    onStateChange: applyState,
+    onMotionChange: applyMotionMode,
+    onResetModel: resetModel,
+    onExportModel: exportModel,
+    onImportModel: () => importInput.click(),
+  },
   document.querySelector<HTMLElement>('#controls')!,
 );
 
