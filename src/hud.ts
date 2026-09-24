@@ -64,6 +64,7 @@ export interface Stats {
 export interface HudCallbacks {
   onStateChange: () => void;
   onMotionChange: () => void;
+  onTimeRangeChange: () => void;
   onResetModel: () => void;
   onExportModel: () => void;
   onImportModel: () => void;
@@ -111,8 +112,12 @@ export function createHud(settings: Settings, stats: Stats, callbacks: HudCallba
   sphere.addBinding(settings, 'randomMotion', { label: 'random motion' }).on('change', callbacks.onMotionChange);
 
   const time = pane.addFolder({ title: '4D · Time (T)' });
-  time.addBinding(settings, 'pastSeconds', { label: 'past (s)', min: 0.5, max: 3, step: 0.1 });
-  time.addBinding(settings, 'futureSeconds', { label: 'future (s)', min: 0, max: 2, step: 0.1 });
+  time
+    .addBinding(settings, 'pastSeconds', { label: 'past (s)', min: 0.5, max: 3, step: 0.1 })
+    .on('change', callbacks.onTimeRangeChange);
+  time
+    .addBinding(settings, 'futureSeconds', { label: 'future (s)', min: 0, max: 5, step: 0.1 })
+    .on('change', callbacks.onTimeRangeChange);
   time.addBinding(settings, 'timeScale', { label: 'units / s', min: 0.2, max: 2, step: 0.05 });
   time.addBinding(settings, 'trailOpacity', { label: 'tube opacity', min: 0.02, max: 0.6, step: 0.01 });
 
