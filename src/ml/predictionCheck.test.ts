@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { describe, expect, it } from 'vitest';
 import { MotionTrack } from '../motionTrack';
 import { MotionHistory, mulberry32, RandomWalk } from '../randomWalk';
-import { CONFIDENCE_RADIUS, forecast, MotionLearner } from './forecast';
+import { CONFIDENCE_RADIUS, forecast, MotionLearner, VELOCITY_WINDOW } from './forecast';
 import { LinearMotionModel } from './motionModel';
 import { PredictionCheck } from './predictionCheck';
 
@@ -49,9 +49,11 @@ describe('PredictionCheck', () => {
         late.n++;
       }
       if (++frames % 6) return;
-      const a = history.sample(now - INTERVAL, new THREE.Vector3());
-      const state = { x: walk.position.x, z: walk.position.z, vx: (walk.position.x - a.x) / INTERVAL, vz: (walk.position.z - a.z) / INTERVAL };
-      const f = forecast(learner.model, state, 60, INTERVAL, check.noiseScale);
+      const recent = Array.from({ length: VELOCITY_WINDOW }, (_, i) => {
+        const p = history.sample(now - (VELOCITY_WINDOW - 1 - i) * INTERVAL, new THREE.Vector3());
+        return { x: p.x, z: p.z };
+      });
+      const f = forecast(learner.model, recent, 60, INTERVAL, check.noiseScale);
       check.record(now, f.x[59], f.z[59], f.confidence[59]);
       if (now > 300) late.claimed += f.confidence[59];
     });

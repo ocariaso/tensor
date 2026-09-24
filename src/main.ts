@@ -27,7 +27,7 @@ import {
 } from './motion';
 import { MotionHistory, RandomWalk } from './randomWalk';
 import { createHistoryUniforms, syncHistoryUniforms } from './objects/historyUniforms';
-import { CONFIDENCE_RADIUS, forecast, MotionLearner } from './ml/forecast';
+import { CONFIDENCE_RADIUS, forecast, MotionLearner, VELOCITY_WINDOW } from './ml/forecast';
 import { LinearMotionModel } from './ml/motionModel';
 import { PredictionCheck, type CheckResult } from './ml/predictionCheck';
 import { MotionTrack } from './motionTrack';
@@ -1035,14 +1035,12 @@ const beforeScratch = new THREE.Vector3();
 function updatePrediction(): void {
   const now = history.newestTime;
   const present = history.sample(now, presentScratch);
-  const before = history.sample(now - HISTORY_INTERVAL, beforeScratch);
-  const state = {
-    x: present.x,
-    z: present.z,
-    vx: (present.x - before.x) / HISTORY_INTERVAL,
-    vz: (present.z - before.z) / HISTORY_INTERVAL,
-  };
-  const f = forecast(learner.model, state, FUTURE_SAMPLES, HISTORY_INTERVAL, check.noiseScale);
+  // The model judges the motion from the same window of recent positions it learned from.
+  const recent = Array.from({ length: VELOCITY_WINDOW }, (_, i) => {
+    const p = history.sample(now - (VELOCITY_WINDOW - 1 - i) * HISTORY_INTERVAL, beforeScratch);
+    return { x: p.x, z: p.z };
+  });
+  const f = forecast(learner.model, recent, FUTURE_SAMPLES, HISTORY_INTERVAL, check.noiseScale);
   track.update(history, settings.showPrediction ? f : null);
 
   const oneAhead = Math.round(CHECK_HORIZON / HISTORY_INTERVAL) - 1;

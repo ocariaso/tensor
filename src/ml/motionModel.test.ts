@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { describe, expect, it } from 'vitest';
 import { mulberry32, RandomWalk } from '../randomWalk';
-import { forecast, MotionLearner } from './forecast';
+import { forecast, MotionLearner, stateFromWindow, VELOCITY_WINDOW } from './forecast';
 import { LinearMotionModel } from './motionModel';
 
 const INTERVAL = 1 / 60;
@@ -19,13 +19,9 @@ function record(walk: RandomWalk, seconds: number, learner?: MotionLearner): THR
   return path;
 }
 
-function stateAt(path: THREE.Vector3[], i: number) {
-  return {
-    x: path[i].x,
-    z: path[i].z,
-    vx: (path[i].x - path[i - 1].x) / INTERVAL,
-    vz: (path[i].z - path[i - 1].z) / INTERVAL,
-  };
+/** The recent positions ending at index i, as the forecast reads them. */
+function recentAt(path: THREE.Vector3[], i: number) {
+  return path.slice(i - VELOCITY_WINDOW + 1, i + 1).map((p) => ({ x: p.x, z: p.z }));
 }
 
 describe('LinearMotionModel', () => {
@@ -61,9 +57,9 @@ describe('forecast', () => {
   const test = record(new RandomWalk(mulberry32(99)), 120);
   const steps = 60;
   const scores = { model: 0, still: 0, coast: 0, claimed: 0, hits: 0, trials: 0 };
-  for (let i = 1; i + steps < test.length; i += 30) {
-    const s = stateAt(test, i);
-    const f = forecast(learner.model, s, steps, INTERVAL);
+  for (let i = VELOCITY_WINDOW; i + steps < test.length; i += 30) {
+    const s = stateFromWindow(recentAt(test, i), INTERVAL);
+    const f = forecast(learner.model, recentAt(test, i), steps, INTERVAL);
     const actual = test[i + steps];
     const predicted = new THREE.Vector3(f.x[steps - 1], 0, f.z[steps - 1]);
     const error = actual.distanceTo(predicted);
@@ -87,13 +83,23 @@ describe('forecast', () => {
   });
 
   it('grows less certain the further ahead it looks', () => {
-    const f = forecast(learner.model, stateAt(test, 5), steps, INTERVAL);
+    const f = forecast(learner.model, recentAt(test, 10), steps, INTERVAL);
     expect(f.spread[steps - 1]).toBeGreaterThan(f.spread[5]);
     expect(f.confidence[steps - 1]).toBeLessThanOrEqual(f.confidence[5]);
   });
 
   it('imagines the same futures for the same seed, so the drawing stays steady', () => {
-    const s = stateAt(test, 5);
-    expect(Array.from(forecast(learner.model, s, 10, INTERVAL).spread)).toEqual(Array.from(forecast(learner.model, s, 10, INTERVAL).spread));
+    const r = recentAt(test, 10);
+    expect(Array.from(forecast(learner.model, r, 10, INTERVAL).spread)).toEqual(Array.from(forecast(learner.model, r, 10, INTERVAL).spread));
+  });
+});
+
+describe('stateFromWindow', () => {
+  it('reads the velocity of a straight line through the window', () => {
+    const line = Array.from({ length: VELOCITY_WINDOW }, (_, i) => ({ x: 0.1 * i, z: -0.05 * i }));
+    const s = stateFromWindow(line, INTERVAL);
+    expect(s.vx).toBeCloseTo(0.1 / INTERVAL);
+    expect(s.vz).toBeCloseTo(-0.05 / INTERVAL);
+    expect(s.x).toBeCloseTo(0.1 * (VELOCITY_WINDOW - 1));
   });
 });
