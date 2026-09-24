@@ -28,6 +28,34 @@ describe('PredictionCheck', () => {
     expect(check.noiseScale).toBeGreaterThan(1);
   });
 
+  it('recovers quickly after a stretch of wildly wrong predictions', () => {
+    const check = new PredictionCheck(1, 0.5);
+    const random = mulberry32(8);
+    // A toy model whose claimed confidence falls as its uncertainty scale grows; truly, 60% of predictions land.
+    const claim = () => Math.min(0.99, 0.9 / check.noiseScale);
+    let t = 0;
+    for (let i = 0; i < 300; i++, t++) {
+      check.record(t, 0, 0, claim());
+      check.settle(t + 1, 1715, 0);
+    }
+    expect(check.noiseScale).toBeLessThanOrEqual(2.5);
+    expect(check.averageError).toBeLessThanOrEqual(5);
+    let recovered = -1;
+    for (let i = 0; i < 2000 && recovered < 0; i++, t++) {
+      check.record(t, 0, 0, claim());
+      check.settle(t + 1, random() < 0.6 ? 0.1 : 2, 0);
+      if (Math.abs(check.noiseScale - 1.5) < 0.3 && Math.abs(check.claimed - check.cameTrue) < 0.1) recovered = i;
+    }
+    expect(recovered).toBeGreaterThan(0);
+    expect(recovered).toBeLessThan(600);
+  });
+
+  it('keeps a restored calibration within its limits', () => {
+    const check = new PredictionCheck(1, 0.5);
+    expect(check.load({ averageError: 1, claimed: 0.5, cameTrue: 0.5, checks: 400, noiseScale: 4 })).toBe(true);
+    expect(check.noiseScale).toBe(2.5);
+  });
+
   it('runs honestly end to end: after learning, the confidence it claims matches how often it is right', () => {
     const walk = new RandomWalk(mulberry32(21));
     const learner = new MotionLearner(new LinearMotionModel(), INTERVAL);
@@ -60,7 +88,8 @@ describe('PredictionCheck', () => {
     const claimed = late.claimed / (late.n || 1);
     const actual = late.hits / (late.n || 1);
     expect(Math.abs(claimed - actual)).toBeLessThan(0.08);
-  });
+    // Ten simulated minutes take a few seconds to run.
+  }, 30_000);
 });
 
 describe('MotionTrack', () => {

@@ -15,6 +15,19 @@ export interface CheckResult {
 
 // How quickly the running averages follow new results; about the last 200 checks count.
 const AVERAGE_RATE = 0.005;
+// The uncertainty correction stays within these bounds, so one bad stretch cannot push it to an extreme.
+export const MIN_NOISE_SCALE = 0.5;
+export const MAX_NOISE_SCALE = 2.5;
+// How strongly each check nudges the correction; stronger nudges overshoot, because the averages they react to lag behind.
+const NUDGE = 0.02;
+// A single wildly wrong prediction counts as at most this far off, so it cannot swamp the average miss.
+const MAX_COUNTED_ERROR = 5;
+/** Below this many checks a horizon's correction is too young to be worth saving. */
+export const TRUSTED_CHECKS = 300;
+
+function clampScale(scale: number): number {
+  return Math.min(MAX_NOISE_SCALE, Math.max(MIN_NOISE_SCALE, scale));
+}
 
 /**
  * Scores predictions a fixed time ahead once that time arrives, and keeps the model's confidence honest:
@@ -48,12 +61,12 @@ export class PredictionCheck {
       const p = this.pending.shift()!;
       const error = Math.hypot(actualX - p.x, actualZ - p.z);
       const rate = this.checks === 0 ? 1 : Math.max(AVERAGE_RATE, 1 / (this.checks + 1));
-      this.averageError += rate * (error - this.averageError);
+      this.averageError += rate * (Math.min(error, MAX_COUNTED_ERROR) - this.averageError);
       this.claimed += rate * (p.confidence - this.claimed);
       this.cameTrue += rate * ((error <= this.radius ? 1 : 0) - this.cameTrue);
       this.checks++;
       // Nudge the uncertainty toward agreement between what is claimed and what comes true.
-      this.noiseScale = Math.min(4, Math.max(0.25, this.noiseScale * Math.exp(0.02 * (this.claimed - this.cameTrue))));
+      this.noiseScale = clampScale(this.noiseScale * Math.exp(NUDGE * (this.claimed - this.cameTrue)));
       result = { ghostX: p.x, ghostZ: p.z, error };
     }
     return result;
@@ -73,7 +86,7 @@ export class PredictionCheck {
     this.claimed = d.claimed as number;
     this.cameTrue = d.cameTrue as number;
     this.checks = d.checks as number;
-    this.noiseScale = d.noiseScale as number;
+    this.noiseScale = clampScale(d.noiseScale as number);
     return true;
   }
 

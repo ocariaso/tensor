@@ -1,5 +1,5 @@
 import type { MotionModel } from './motionModel';
-import type { PredictionCheck } from './predictionCheck';
+import { TRUSTED_CHECKS, type PredictionCheck } from './predictionCheck';
 
 // Bump the version whenever the saved shape changes, so an old save is ignored instead of misread.
 const STORAGE_KEY = 'tensor.model.v1';
@@ -30,7 +30,8 @@ export function serializeLearning(model: MotionModel, checks: Scorekeepers, save
     version: VERSION,
     savedAt: savedAt.toISOString(),
     model: model.save(),
-    checks: Object.fromEntries(Object.entries(checks).map(([k, c]) => [k, c.save()])),
+    // A horizon graded too few times is left out, so after a reload it simply starts fresh.
+    checks: Object.fromEntries(Object.entries(checks).filter(([, c]) => c.checks >= TRUSTED_CHECKS).map(([k, c]) => [k, c.save()])),
   };
   return JSON.stringify(saved, null, 2);
 }

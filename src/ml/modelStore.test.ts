@@ -36,6 +36,7 @@ function trained(): { model: LinearMotionModel; check: PredictionCheck } {
   });
   const check = new PredictionCheck(1, 0.5);
   check.noiseScale = 1.4;
+  check.checks = 500;
   check.claimed = 0.7;
   return { model: learner.model as LinearMotionModel, check };
 }
